@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>GateKeeper Admin Console</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#f4f5f7;--card:#fff;--accent:#4a56e2;--accent2:#6c5ce7;--green:#00b894;--red:#e17055;--orange:#f39c12;--text:#1a1a2e;--text2:#6b7280;--border:#e5e7eb;--radius:12px}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text)}
+.layout{display:flex;min-height:100vh}
+.sidebar{width:240px;background:#1a1a2e;color:white;padding:20px 0;position:fixed;height:100vh;overflow-y:auto}
+.sidebar h1{font-size:18px;padding:0 20px 20px;border-bottom:1px solid rgba(255,255,255,.1);background:linear-gradient(135deg,#6c5ce7,#a29bfe);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.sidebar .society-name{padding:12px 20px;font-size:11px;color:#8888a0;border-bottom:1px solid rgba(255,255,255,.1)}
+.sidebar .society-name span{color:#a29bfe;font-weight:600;display:block;font-size:13px}
+.sidebar nav{padding:12px 0}
+.sidebar nav button{display:block;width:100%;text-align:left;padding:10px 20px;background:none;border:none;color:#8888a0;font-size:13px;cursor:pointer;font-family:inherit;transition:.2s}
+.sidebar nav button:hover,.sidebar nav button.active{color:white;background:rgba(108,92,231,.2)}
+.sidebar nav button.active{border-left:3px solid #6c5ce7}
+.main{margin-left:240px;flex:1;padding:24px 32px}
+.top-bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px}
+.top-bar h2{font-size:24px;font-weight:700}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:16px;margin-bottom:24px}
+.stat-card{background:var(--card);border-radius:var(--radius);padding:20px;border:1px solid var(--border)}
+.stat-card .val{font-size:28px;font-weight:700;font-family:'Space Mono'}
+.stat-card .label{font-size:12px;color:var(--text2);margin-top:4px}
+.card{background:var(--card);border-radius:var(--radius);padding:20px;border:1px solid var(--border);margin-bottom:16px}
+.table{width:100%;border-collapse:collapse}
+.table th{text-align:left;padding:10px 12px;font-size:12px;color:var(--text2);font-weight:600;border-bottom:2px solid var(--border);text-transform:uppercase}
+.table td{padding:10px 12px;font-size:13px;border-bottom:1px solid var(--border)}
+.badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600}
+.badge-green{background:rgba(0,184,148,.1);color:var(--green)}
+.badge-red{background:rgba(225,112,85,.1);color:var(--red)}
+.badge-orange{background:rgba(243,156,18,.1);color:var(--orange)}
+.badge-blue{background:rgba(74,86,226,.1);color:var(--accent)}
+.btn{padding:8px 16px;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;transition:.2s}
+.btn-primary{background:var(--accent);color:white}.btn-primary:hover{opacity:.9}
+.btn-green{background:var(--green);color:white}
+.btn-red{background:var(--red);color:white}
+.btn-sm{padding:5px 12px;font-size:11px}
+.input{padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none;width:100%}
+.input:focus{border-color:var(--accent)}
+.form-group{margin-bottom:12px}
+.label{font-size:12px;color:var(--text2);margin-bottom:4px;display:block}
+.flex{display:flex;align-items:center;gap:8px}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:100;display:flex;align-items:center;justify-content:center}
+.modal{background:white;border-radius:16px;padding:24px;width:90%;max-width:500px;max-height:80vh;overflow-y:auto}
+.modal h3{font-size:18px;margin-bottom:16px}
+.login{display:flex;align-items:center;justify-content:center;min-height:100vh;flex-direction:column;gap:16px}
+.login h1{font-size:28px;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.empty{text-align:center;padding:40px;color:var(--text2);font-size:14px}
+.tab-bar{display:flex;gap:6px;margin-bottom:16px}
+.tab{padding:6px 14px;border-radius:20px;font-size:12px;font-weight:600;border:1px solid var(--border);background:none;color:var(--text2);cursor:pointer;font-family:inherit}
+.tab.active{background:var(--accent);color:white;border-color:var(--accent)}
+select.input{appearance:none}
+@media(max-width:768px){.sidebar{display:none}.main{margin-left:0}}
+</style></head><body><div id="root"></div>
+<script type="text/babel">
+const {useState,useEffect,useCallback} = React;
+
+function api(path, opts={}) {
+  const token = localStorage.getItem('gk_admin_token');
+  const headers = {'Content-Type':'application/json'};
+  if(token) headers['Authorization'] = `Bearer ${token}`;
+  return fetch(path, {...opts, headers}).then(r=>r.json());
+}
+
+function App() {
+  const [token, setToken] = useState(localStorage.getItem('gk_admin_token'));
+  const [user, setUser] = useState(null);
+  const [ctx, setCtx] = useState(null);
+  const [page, setPage] = useState('dashboard');
+  const [loading, setLoading] = useState(true);
+
+  const loadMe = useCallback(()=>{
+    if(!token){setLoading(false);return;}
+    api('/api/auth/me').then(d=>{
+      if(d.error){localStorage.removeItem('gk_admin_token');setToken(null);}
+      else{setUser(d.user);setCtx(d);}
+      setLoading(false);
+    });
+  },[token]);
+  useEffect(()=>{loadMe();},[loadMe]);
+
+  const handleLogin=(t)=>{localStorage.setItem('gk_admin_token',t);setToken(t);setLoading(true);setTimeout(loadMe,100);};
+
+  if(loading) return <div className="login"><h1>Loading...</h1></div>;
+  if(!token) return <LoginPage onLogin={handleLogin}/>;
+
+  const pages = {dashboard:<Dashboard/>,residents:<Residents/>,spaces:<Spaces/>,bookings:<Bookings/>,approvals:<Approvals/>,daily_help:<DailyHelp/>,documents:<Documents/>,doc_reqs:<DocReqs/>};
+
+  return <div className="layout">
+    <div className="sidebar">
+      <h1 style={{padding:'16px 20px 16px'}}>GateKeeper Admin</h1>
+      <div className="society-name"><span>{ctx?.society?.name||'No Society'}</span>{ctx?.society?.city}</div>
+      <nav>
+        {[['dashboard','Dashboard'],['residents','Residents'],['spaces','Spaces'],['bookings','Bookings'],['approvals','Approvals'],['daily_help','Daily Help'],['documents','Documents'],['doc_reqs','Doc Requirements']].map(([k,l])=>
+          <button key={k} className={page===k?'active':''} onClick={()=>setPage(k)}>{l}</button>
+        )}
+        <button style={{color:'#e17055',marginTop:20}} onClick={()=>{localStorage.removeItem('gk_admin_token');setToken(null);}}>Sign Out</button>
+      </nav>
+    </div>
+    <div className="main">{pages[page]||pages.dashboard}</div>
+  </div>;
+}
+
+function LoginPage({onLogin}) {
+  const [phone,setPhone]=useState('');const [otp,setOtp]=useState('');const [sid,setSid]=useState('');const [step,setStep]=useState('phone');
+  const send=()=>api('/api/auth/request-otp',{method:'POST',body:JSON.stringify({phone})}).then(d=>{if(d.success){setSid(d.sessionId);setStep('otp');}});
+  const verify=()=>api('/api/auth/verify-otp',{method:'POST',body:JSON.stringify({sessionId:sid,otp})}).then(d=>{if(d.token)onLogin(d.token);});
+  return <div className="login">
+    <h1>GateKeeper Admin</h1>
+    <p style={{color:'var(--text2)'}}>Management Console</p>
+    <div style={{width:300}}>
+      {step==='phone'?<><div className="form-group"><label className="label">Phone</label><input className="input" value={phone} onChange={e=>setPhone(e.target.value)} placeholder="Admin phone"/></div>
+        <button className="btn btn-primary" style={{width:'100%'}} onClick={send}>Send OTP</button>
+        <p style={{fontSize:11,color:'var(--text2)',marginTop:8}}>Demo: 9999900001 (Green Valley) | 9999900003 (Sunrise)</p></>
+      :<><div className="form-group"><label className="label">OTP</label><input className="input" value={otp} onChange={e=>setOtp(e.target.value)} placeholder="123456"/></div>
+        <button className="btn btn-primary" style={{width:'100%'}} onClick={verify}>Verify</button></>}
+    </div>
+  </div>;
+}
+
+function Dashboard() {
+  const [d,setD]=useState({});
+  useEffect(()=>{api('/api/admin/dashboard').then(setD);},[]);
+  return <div><div className="top-bar"><h2>Dashboard</h2></div>
+    <div className="stats">
+      <div className="stat-card"><div className="val" style={{color:'var(--accent)'}}>{d.totalResidents||0}</div><div className="label">Total Residents</div></div>
+      <div className="stat-card"><div className="val" style={{color:'var(--orange)'}}>{d.pendingApprovals||0}</div><div className="label">Pending Approvals</div></div>
+      <div className="stat-card"><div className="val" style={{color:'var(--red)'}}>{d.pendingMoves||0}</div><div className="label">Pending Moves</div></div>
+      <div className="stat-card"><div className="val" style={{color:'var(--accent2)'}}>{d.pendingLeases||0}</div><div className="label">Pending Leases</div></div>
+      <div className="stat-card"><div className="val" style={{color:'var(--green)'}}>{d.activeDailyHelp||0}</div><div className="label">Active Daily Help</div></div>
+      <div className="stat-card"><div className="val" style={{color:'var(--orange)'}}>{d.pendingDocuments||0}</div><div className="label">Pending Docs</div></div>
+    </div>
+  </div>;
+}
+
+function Residents() {
+  const [res,setRes]=useState([]);const [filter,setFilter]=useState('');
+  const load=()=>api('/api/admin/residents'+(filter?'?status='+filter:'')).then(setRes);
+  useEffect(()=>{load();},[filter]);
+  const approve=id=>api(`/api/admin/residents/${id}/approve`,{method:'POST'}).then(load);
+  const reject=id=>api(`/api/admin/residents/${id}/reject`,{method:'POST'}).then(load);
+  return <div><div className="top-bar"><h2>Residents</h2></div>
+    <div className="tab-bar">
+      {['','pending','approved','rejected'].map(f=><button key={f} className={`tab ${filter===f?'active':''}`} onClick={()=>setFilter(f)}>{f||'All'}</button>)}
+    </div>
+    <div className="card"><table className="table"><thead><tr><th>Name</th><th>Phone</th><th>Apartment</th><th>Tower</th><th>Type</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+      {res.map(r=><tr key={r.id}><td>{r.name}</td><td>{r.phone}</td><td>{r.unit_number}</td><td>{r.tower_name}</td>
+        <td><span className="badge badge-blue">{r.resident_type}</span></td>
+        <td><span className={`badge badge-${r.status==='approved'?'green':r.status==='pending'?'orange':'red'}`}>{r.status}</span></td>
+        <td>{r.status==='pending'&&<div className="flex"><button className="btn btn-sm btn-green" onClick={()=>approve(r.id)}>Approve</button><button className="btn btn-sm btn-red" onClick={()=>reject(r.id)}>Reject</button></div>}</td></tr>)}
+    </tbody></table>
+    {!res.length&&<div className="empty">No residents found</div>}</div>
+  </div>;
+}
+
+function Spaces() {
+  const [spaces,setSpaces]=useState([]);const [modal,setModal]=useState(false);
+  const load=()=>api('/api/admin/spaces').then(setSpaces);
+  useEffect(()=>{load();},[]);
+  const add=d=>{api('/api/admin/spaces',{method:'POST',body:JSON.stringify(d)}).then(()=>{load();setModal(false);});};
+  const del=id=>{if(confirm('Delete?'))api(`/api/admin/spaces/${id}`,{method:'DELETE'}).then(load);};
+  return <div><div className="top-bar"><h2>Spaces</h2><button className="btn btn-primary" onClick={()=>setModal(true)}>+ Add Space</button></div>
+    <div className="card"><table className="table"><thead><tr><th>Name</th><th>Type</th><th>Capacity</th><th>Cost/hr</th><th>Hours</th><th>Shared</th><th>Actions</th></tr></thead><tbody>
+      {spaces.map(s=><tr key={s.id}><td><b>{s.name}</b><br/><span style={{fontSize:11,color:'var(--text2)'}}>{s.description}</span></td><td>{s.space_type}</td><td>{s.capacity}</td><td style={{fontFamily:'Space Mono'}}>Rs.{s.cost_per_hour}</td><td>{s.available_from}-{s.available_to}</td><td>{s.is_shared?`Yes (${s.total_spots} spots)`:'No'}</td>
+        <td><button className="btn btn-sm btn-red" onClick={()=>del(s.id)}>Delete</button></td></tr>)}
+    </tbody></table></div>
+    {modal&&<Modal title="Add Space" onClose={()=>setModal(false)} onSubmit={add}
+      fields={[{k:'name',l:'Name'},{k:'description',l:'Description'},{k:'spaceType',l:'Type',type:'select',opts:['common_room','work_area','gym','pool','party_hall','guest_room','other']},{k:'capacity',l:'Capacity',type:'number'},{k:'costPerHour',l:'Cost/Hour',type:'number'},{k:'availableFrom',l:'Open',type:'time'},{k:'availableTo',l:'Close',type:'time'},{k:'isShared',l:'Shared workspace?',type:'select',opts:['false','true']},{k:'totalSpots',l:'Total Spots',type:'number'}]}/>}
+  </div>;
+}
+
+function Bookings() {
+  const [bk,setBk]=useState([]);
+  useEffect(()=>{api('/api/admin/bookings').then(setBk);},[]);
+  return <div><div className="top-bar"><h2>Bookings</h2></div>
+    <div className="card"><table className="table"><thead><tr><th>Space</th><th>Booked By</th><th>Date</th><th>Time</th><th>Cost</th><th>Status</th></tr></thead><tbody>
+      {bk.map(b=><tr key={b.id}><td>{b.space_name}</td><td>{b.booked_by}</td><td>{b.booking_date}</td><td>{b.start_time}-{b.end_time}</td><td style={{fontFamily:'Space Mono'}}>Rs.{b.total_cost}</td>
+        <td><span className={`badge badge-${b.status==='confirmed'?'green':b.status==='pending'?'orange':'red'}`}>{b.status}</span></td></tr>)}
+    </tbody></table>{!bk.length&&<div className="empty">No bookings</div>}</div>
+  </div>;
+}
+
+function Approvals() {
+  const [moves,setMoves]=useState([]);const [leases,setLeases]=useState([]);const [tab,setTab]=useState('moves');
+  const loadM=()=>api('/api/admin/move-requests').then(setMoves);
+  const loadL=()=>api('/api/admin/lease-extensions').then(setLeases);
+  useEffect(()=>{loadM();loadL();},[]);
+  return <div><div className="top-bar"><h2>Approvals</h2></div>
+    <div className="tab-bar"><button className={`tab ${tab==='moves'?'active':''}`} onClick={()=>setTab('moves')}>Move Requests</button><button className={`tab ${tab==='leases'?'active':''}`} onClick={()=>setTab('leases')}>Lease Extensions</button></div>
+    {tab==='moves'&&<div className="card"><table className="table"><thead><tr><th>Name</th><th>Apartment</th><th>Type</th><th>Dates</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+      {moves.map(m=><tr key={m.id}><td>{m.name}</td><td>{m.unit_number} - {m.tower_name}</td><td><span className={`badge badge-${m.move_type==='move_in'?'green':'red'}`}>{m.move_type}</span></td><td>{m.tentative_start} to {m.tentative_end}</td>
+        <td><span className={`badge badge-${m.status==='approved'?'green':m.status==='pending'?'orange':'red'}`}>{m.status}</span></td>
+        <td>{m.status==='pending'&&<div className="flex"><button className="btn btn-sm btn-green" onClick={()=>api(`/api/admin/move-requests/${m.id}/approve`,{method:'POST'}).then(loadM)}>Approve</button><button className="btn btn-sm btn-red" onClick={()=>api(`/api/admin/move-requests/${m.id}/reject`,{method:'POST'}).then(loadM)}>Reject</button></div>}</td></tr>)}
+    </tbody></table>{!moves.length&&<div className="empty">No move requests</div>}</div>}
+    {tab==='leases'&&<div className="card"><table className="table"><thead><tr><th>Name</th><th>Apartment</th><th>Current End</th><th>Requested End</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+      {leases.map(l=><tr key={l.id}><td>{l.name}</td><td>{l.unit_number} - {l.tower_name}</td><td>{l.current_end}</td><td>{l.requested_end}</td>
+        <td><span className={`badge badge-${l.status==='approved'?'green':l.status==='pending'?'orange':'red'}`}>{l.status}</span></td>
+        <td>{l.status==='pending'&&<div className="flex"><button className="btn btn-sm btn-green" onClick={()=>api(`/api/admin/lease-extensions/${l.id}/approve`,{method:'POST'}).then(loadL)}>Approve</button><button className="btn btn-sm btn-red" onClick={()=>api(`/api/admin/lease-extensions/${l.id}/reject`,{method:'POST'}).then(loadL)}>Reject</button></div>}</td></tr>)}
+    </tbody></table>{!leases.length&&<div className="empty">No lease extensions</div>}</div>}
+  </div>;
+}
+
+function DailyHelp() {
+  const [help,setHelp]=useState([]);const [modal,setModal]=useState(false);
+  const load=()=>api('/api/admin/daily-help').then(setHelp);
+  useEffect(()=>{load();},[]);
+  const add=d=>{api('/api/admin/daily-help',{method:'POST',body:JSON.stringify(d)}).then(()=>{load();setModal(false);});};
+  return <div><div className="top-bar"><h2>Daily Help</h2><button className="btn btn-primary" onClick={()=>setModal(true)}>+ Add</button></div>
+    <div className="card"><table className="table"><thead><tr><th>Name</th><th>Phone</th><th>Type</th><th>ID Code</th><th>QR Code</th><th>Status</th><th>Assignments</th><th>Actions</th></tr></thead><tbody>
+      {help.map(h=><tr key={h.id}><td>{h.name}</td><td>{h.phone}</td><td>{h.help_type}</td><td style={{fontFamily:'Space Mono',fontSize:12}}>{h.id_code}</td><td style={{fontFamily:'Space Mono',fontSize:12}}>{h.qr_code}</td>
+        <td><span className={`badge badge-${h.status==='approved'?'green':h.status==='pending'?'orange':'red'}`}>{h.status}</span></td>
+        <td>{h.assignments?.map(a=><div key={a.id} style={{fontSize:11}}>{a.unit_number} ({a.days_of_week}) {a.time_slot}</div>)}</td>
+        <td>{h.status==='pending'&&<div className="flex"><button className="btn btn-sm btn-green" onClick={()=>api(`/api/admin/daily-help/${h.id}/approve`,{method:'POST'}).then(load)}>Approve</button><button className="btn btn-sm btn-red" onClick={()=>api(`/api/admin/daily-help/${h.id}/reject`,{method:'POST'}).then(load)}>Reject</button></div>}</td></tr>)}
+    </tbody></table>{!help.length&&<div className="empty">No daily help registered</div>}</div>
+    {modal&&<Modal title="Add Daily Help" onClose={()=>setModal(false)} onSubmit={add}
+      fields={[{k:'name',l:'Name'},{k:'phone',l:'Phone'},{k:'helpType',l:'Type',type:'select',opts:['maid','cook','driver','gardener','other']}]}/>}
+  </div>;
+}
+
+function Documents() {
+  const [docs,setDocs]=useState([]);
+  const load=()=>api('/api/admin/documents').then(setDocs);
+  useEffect(()=>{load();},[]);
+  return <div><div className="top-bar"><h2>Documents</h2></div>
+    <div className="card"><table className="table"><thead><tr><th>Name</th><th>Apartment</th><th>Type</th><th>File</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+      {docs.map(d=><tr key={d.id}><td>{d.name}</td><td>{d.unit_number}</td><td>{d.doc_type}</td><td>{d.file_name}</td>
+        <td><span className={`badge badge-${d.status==='verified'?'green':d.status==='pending'?'orange':'red'}`}>{d.status}</span></td>
+        <td>{d.status==='pending'&&<div className="flex"><button className="btn btn-sm btn-green" onClick={()=>api(`/api/admin/documents/${d.id}/verify`,{method:'POST'}).then(load)}>Verify</button><button className="btn btn-sm btn-red" onClick={()=>api(`/api/admin/documents/${d.id}/reject`,{method:'POST'}).then(load)}>Reject</button></div>}</td></tr>)}
+    </tbody></table>{!docs.length&&<div className="empty">No documents</div>}</div>
+  </div>;
+}
+
+function DocReqs() {
+  const [reqs,setReqs]=useState([]);const [modal,setModal]=useState(false);
+  const load=()=>api('/api/admin/document-requirements').then(setReqs);
+  useEffect(()=>{load();},[]);
+  const add=d=>{api('/api/admin/document-requirements',{method:'POST',body:JSON.stringify({...d,isMandatory:true})}).then(()=>{load();setModal(false);});};
+  const del=id=>api(`/api/admin/document-requirements/${id}`,{method:'DELETE'}).then(load);
+  return <div><div className="top-bar"><h2>Document Requirements</h2><button className="btn btn-primary" onClick={()=>setModal(true)}>+ Add</button></div>
+    <div className="card"><table className="table"><thead><tr><th>Resident Type</th><th>Document Type</th><th>Mandatory</th><th>Actions</th></tr></thead><tbody>
+      {reqs.map(r=><tr key={r.id}><td><span className="badge badge-blue">{r.resident_type}</span></td><td>{r.doc_type}</td><td>{r.is_mandatory?'Yes':'No'}</td>
+        <td><button className="btn btn-sm btn-red" onClick={()=>del(r.id)}>Remove</button></td></tr>)}
+    </tbody></table></div>
+    {modal&&<Modal title="Add Requirement" onClose={()=>setModal(false)} onSubmit={add}
+      fields={[{k:'residentType',l:'Resident Type',type:'select',opts:['owner','tenant','family_member']},{k:'docType',l:'Document Type',type:'select',opts:['property_papers','government_id','rent_agreement','address_proof','other']}]}/>}
+  </div>;
+}
+
+function Modal({title,onClose,onSubmit,fields}) {
+  const [data,setData]=useState({});
+  const set=(k,v)=>setData(d=>({...d,[k]:v}));
+  return <div className="modal-overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
+    <h3>{title}</h3>
+    {fields.map(f=><div key={f.k} className="form-group"><label className="label">{f.l}</label>
+      {f.type==='select'?<select className="input" value={data[f.k]||''} onChange={e=>set(f.k,e.target.value)}><option value="">Select</option>{f.opts.map(o=><option key={o} value={o}>{o}</option>)}</select>
+      :<input className="input" type={f.type||'text'} value={data[f.k]||''} onChange={e=>set(f.k,e.target.value)}/>}</div>)}
+    <div className="flex" style={{gap:8,marginTop:16}}><button className="btn btn-primary" style={{flex:1}} onClick={()=>onSubmit(data)}>Submit</button><button className="btn" style={{flex:1,background:'var(--bg)'}} onClick={onClose}>Cancel</button></div>
+  </div></div>;
+}
+
+ReactDOM.render(<App/>, document.getElementById('root'));
+</script></body></html>

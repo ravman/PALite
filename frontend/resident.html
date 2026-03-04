@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GateKeeper - Resident App</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0a0a0f;--card:#14141f;--card2:#1a1a2e;--accent:#6c5ce7;--accent2:#a29bfe;--green:#00b894;--red:#e17055;--orange:#fdcb6e;--text:#e8e8f0;--text2:#8888a0;--border:#2a2a3e;--radius:14px}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+.app{max-width:480px;margin:0 auto;padding-bottom:80px}
+.header{padding:16px 20px;display:flex;align-items:center;justify-content:space-between;background:linear-gradient(135deg,#14141f,#1a1a2e);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100}
+.header h1{font-size:18px;font-weight:700;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.header .ctx{font-size:11px;color:var(--text2);text-align:right;cursor:pointer}
+.header .ctx span{color:var(--accent2);font-weight:600}
+.nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;background:var(--card);border-top:1px solid var(--border);display:flex;padding:8px 0;z-index:100}
+.nav button{flex:1;background:none;border:none;color:var(--text2);font-size:10px;padding:6px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;transition:.2s}
+.nav button.active{color:var(--accent2)}
+.nav button svg{width:20px;height:20px}
+.page{padding:16px 20px}
+.page-title{font-size:22px;font-weight:700;margin-bottom:16px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:12px;transition:.2s}
+.card:hover{border-color:var(--accent);transform:translateY(-1px)}
+.card-title{font-size:14px;font-weight:600;margin-bottom:8px}
+.card-sub{font-size:12px;color:var(--text2)}
+.badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600}
+.badge-green{background:rgba(0,184,148,.15);color:var(--green)}
+.badge-red{background:rgba(225,112,85,.15);color:var(--red)}
+.badge-orange{background:rgba(253,203,110,.15);color:var(--orange)}
+.badge-purple{background:rgba(108,92,231,.15);color:var(--accent)}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.stat{background:var(--card2);border-radius:var(--radius);padding:14px;text-align:center}
+.stat-val{font-size:24px;font-weight:700;font-family:'Space Mono',monospace}
+.stat-label{font-size:11px;color:var(--text2);margin-top:4px}
+.btn{padding:10px 20px;border:none;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;transition:.2s;font-family:inherit}
+.btn-primary{background:var(--accent);color:white}.btn-primary:hover{background:var(--accent2)}
+.btn-secondary{background:var(--card2);color:var(--text);border:1px solid var(--border)}.btn-secondary:hover{border-color:var(--accent)}
+.btn-sm{padding:6px 14px;font-size:11px}
+.btn-green{background:var(--green);color:white}
+.btn-red{background:var(--red);color:white}
+.input{width:100%;padding:10px 14px;border:1px solid var(--border);border-radius:10px;background:var(--card2);color:var(--text);font-size:13px;font-family:inherit;outline:none;transition:.2s}
+.input:focus{border-color:var(--accent)}
+.label{font-size:12px;color:var(--text2);margin-bottom:6px;display:block}
+.form-group{margin-bottom:14px}
+select.input{appearance:none;cursor:pointer}
+.login{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:40px 20px;text-align:center}
+.login h1{font-size:32px;margin-bottom:8px;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.login p{color:var(--text2);margin-bottom:32px}
+.login .form{width:100%;max-width:320px}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:200;display:flex;align-items:flex-end;justify-content:center}
+.modal{background:var(--card);border-radius:20px 20px 0 0;width:100%;max-width:480px;max-height:80vh;overflow-y:auto;padding:24px 20px}
+.modal h2{font-size:18px;margin-bottom:16px}
+.empty{text-align:center;padding:40px 20px;color:var(--text2)}
+.tab-bar{display:flex;gap:6px;margin-bottom:16px;overflow-x:auto}
+.tab{padding:6px 14px;border-radius:20px;font-size:12px;font-weight:600;border:1px solid var(--border);background:none;color:var(--text2);cursor:pointer;white-space:nowrap;font-family:inherit}
+.tab.active{background:var(--accent);color:white;border-color:var(--accent)}
+.list-item{display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)}
+.list-item:last-child{border-bottom:none}
+.flex{display:flex;align-items:center;gap:8px}
+.flex-between{display:flex;align-items:center;justify-content:space-between}
+.mt-2{margin-top:8px}.mt-4{margin-top:16px}.mb-2{margin-bottom:8px}.mb-4{margin-bottom:16px}
+.qr-box{background:white;color:black;padding:20px;border-radius:12px;text-align:center;font-family:'Space Mono',monospace;font-size:14px;font-weight:700;word-break:break-all}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useEffect,useCallback} = React;
+const API = '';
+
+function api(path, opts={}) {
+  const token = localStorage.getItem('gk_token');
+  const headers = {'Content-Type':'application/json'};
+  if(token) headers['Authorization'] = `Bearer ${token}`;
+  return fetch(API+path, {...opts, headers}).then(r=>r.json());
+}
+
+// Icons as simple SVG
+const Icons = {
+  home: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9,22 9,12 15,12 15,22"/></svg>,
+  user: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,
+  calendar: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>,
+  shield: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>,
+  shop: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg>,
+  plus: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>,
+};
+
+function App() {
+  const [token, setToken] = useState(localStorage.getItem('gk_token'));
+  const [user, setUser] = useState(null);
+  const [ctx, setCtx] = useState(null);
+  const [page, setPage] = useState('home');
+  const [loading, setLoading] = useState(true);
+
+  const loadMe = useCallback(()=>{
+    if(!token) {setLoading(false); return;}
+    api('/api/auth/me').then(d=>{
+      if(d.error) {localStorage.removeItem('gk_token');setToken(null);}
+      else {setUser(d.user);setCtx(d);}
+      setLoading(false);
+    }).catch(()=>{setLoading(false);});
+  },[token]);
+
+  useEffect(()=>{loadMe();},[loadMe]);
+
+  const handleLogin = (t,u)=>{localStorage.setItem('gk_token',t);setToken(t);setUser(u);setLoading(true);setTimeout(loadMe,100);};
+  const handleLogout = ()=>{localStorage.removeItem('gk_token');setToken(null);setUser(null);setCtx(null);setPage('home');};
+  const switchApt = (aptId)=>{api('/api/context/switch',{method:'POST',body:JSON.stringify({apartmentId:aptId})}).then(()=>loadMe());};
+
+  if(loading) return <div className="login"><h1>GateKeeper</h1><p>Loading...</p></div>;
+  if(!token) return <LoginPage onLogin={handleLogin}/>;
+
+  const pages = {home:<HomePage ctx={ctx}/>,profile:<ProfilePage ctx={ctx} user={user} onLogout={handleLogout} switchApt={switchApt} reload={loadMe}/>,bookings:<BookingsPage/>,visitors:<VisitorsPage ctx={ctx}/>,marketplace:<MarketplacePage/>};
+
+  return <div className="app">
+    <div className="header">
+      <h1>GateKeeper</h1>
+      <div className="ctx" onClick={()=>setPage('profile')}>
+        {ctx?.society && <><span>{ctx.society.name}</span><br/>{ctx.apartment?.unit_number || 'No apartment'}</>}
+      </div>
+    </div>
+    {pages[page] || pages.home}
+    <div className="nav">
+      {[['home','Home',Icons.home],['profile','Profile',Icons.user],['bookings','Book',Icons.calendar],['visitors','Visitors',Icons.shield],['marketplace','Market',Icons.shop]].map(([k,l,ic])=>
+        <button key={k} className={page===k?'active':''} onClick={()=>setPage(k)}>{ic}{l}</button>
+      )}
+    </div>
+  </div>;
+}
+
+function LoginPage({onLogin}) {
+  const [phone, setPhone] = useState('');
+  const [otp, setOtp] = useState('');
+  const [sid, setSid] = useState('');
+  const [step, setStep] = useState('phone');
+  const [err, setErr] = useState('');
+
+  const sendOtp = ()=>{
+    api('/api/auth/request-otp',{method:'POST',body:JSON.stringify({phone})})
+    .then(d=>{if(d.success){setSid(d.sessionId);setStep('otp');}else setErr(d.error);});
+  };
+  const verify = ()=>{
+    api('/api/auth/verify-otp',{method:'POST',body:JSON.stringify({sessionId:sid,otp})})
+    .then(d=>{if(d.token){onLogin(d.token,d.user);}else setErr(d.error);});
+  };
+
+  return <div className="login">
+    <h1>GateKeeper</h1>
+    <p>Smart Community Living</p>
+    <div className="form">
+      {step==='phone' ? <>
+        <div className="form-group"><label className="label">Phone Number</label>
+        <input className="input" placeholder="Enter phone number" value={phone} onChange={e=>setPhone(e.target.value)}/></div>
+        <button className="btn btn-primary" style={{width:'100%'}} onClick={sendOtp}>Send OTP</button>
+        <p style={{marginTop:12,fontSize:12,color:'var(--text2)'}}>Demo: 9876543210 (Resident) | 9999900001 (Admin) | 9999900002 (Guard)</p>
+      </> : <>
+        <div className="form-group"><label className="label">Enter OTP</label>
+        <input className="input" placeholder="Enter 6-digit OTP" value={otp} onChange={e=>setOtp(e.target.value)}/></div>
+        <button className="btn btn-primary" style={{width:'100%'}} onClick={verify}>Verify</button>
+        <p style={{marginTop:12,fontSize:12,color:'var(--text2)'}}>Demo OTP: 123456</p>
+      </>}
+      {err && <p style={{color:'var(--red)',marginTop:12,fontSize:13}}>{err}</p>}
+    </div>
+  </div>;
+}
+
+function HomePage({ctx}) {
+  const [approvals, setApprovals] = useState({entries:[],deliveries:[]});
+  const [locks, setLocks] = useState([]);
+
+  useEffect(()=>{
+    api('/api/visitors/pending-approvals').then(setApprovals);
+    api('/api/smart-lock/status').then(d=>setLocks(d.locks||[]));
+  },[]);
+
+  const approve = id=>{api(`/api/visitors/${id}/approve`,{method:'POST'}).then(()=>api('/api/visitors/pending-approvals').then(setApprovals));};
+  const reject = id=>{api(`/api/visitors/${id}/reject`,{method:'POST'}).then(()=>api('/api/visitors/pending-approvals').then(setApprovals));};
+  const unlock = id=>{api('/api/smart-lock/unlock',{method:'POST',body:JSON.stringify({lockId:id})}).then(()=>alert('Lock opened!'));};
+
+  return <div className="page">
+    <div className="page-title">Welcome, {ctx?.user?.name?.split(' ')[0]}</div>
+    
+    {approvals.entries.length>0 && <>
+      <h3 className="mb-2" style={{fontSize:14,color:'var(--orange)'}}>Pending Visitor Approvals</h3>
+      {approvals.entries.map(e=><div key={e.id} className="card">
+        <div className="flex-between"><div><div className="card-title">{e.visitor_name}</div><div className="card-sub">{e.visitor_type} &bull; {e.visitor_phone||'No phone'}</div></div>
+        <div className="flex"><button className="btn btn-sm btn-green" onClick={()=>approve(e.id)}>Allow</button><button className="btn btn-sm btn-red" onClick={()=>reject(e.id)}>Deny</button></div></div>
+      </div>)}
+    </>}
+
+    <h3 className="mb-2 mt-4" style={{fontSize:14}}>Smart Locks</h3>
+    <div className="grid-2">
+      {locks.map(l=><div key={l.id} className="card" style={{cursor:'pointer'}} onClick={()=>unlock(l.id)}>
+        <div className="card-title">{l.name}</div>
+        <div className="flex-between mt-2"><span className="badge badge-purple">{l.status}</span><span className="card-sub">{l.battery}%</span></div>
+      </div>)}
+    </div>
+
+    <h3 className="mb-2 mt-4" style={{fontSize:14}}>Quick Info</h3>
+    <div className="grid-2">
+      <div className="stat"><div className="stat-val" style={{color:'var(--accent)'}}>{ctx?.society?.name?.split(' ')[0]||'-'}</div><div className="stat-label">Society</div></div>
+      <div className="stat"><div className="stat-val" style={{color:'var(--green)'}}>{ctx?.apartment?.unit_number||'-'}</div><div className="stat-label">Apartment</div></div>
+    </div>
+  </div>;
+}
+
+function ProfilePage({ctx,user,onLogout,switchApt,reload}) {
+  const [profile, setProfile] = useState(null);
+  const [tab, setTab] = useState('info');
+  const [modal, setModal] = useState(null);
+
+  useEffect(()=>{api('/api/residents/profile').then(setProfile);},[]);
+  if(!profile) return <div className="page">Loading...</div>;
+
+  const addVehicle = d=>{api('/api/residents/vehicles',{method:'POST',body:JSON.stringify(d)}).then(()=>{api('/api/residents/profile').then(setProfile);setModal(null);});};
+  const addPet = d=>{api('/api/residents/pets',{method:'POST',body:JSON.stringify(d)}).then(()=>{api('/api/residents/profile').then(setProfile);setModal(null);});};
+  const inviteFamily = d=>{api('/api/residents/invite-family',{method:'POST',body:JSON.stringify(d)}).then(()=>{api('/api/residents/profile').then(setProfile);setModal(null);});};
+
+  return <div className="page">
+    <div className="page-title">My Profile</div>
+    <div className="card"><div className="card-title">{profile.user.name}</div><div className="card-sub">{profile.user.phone} &bull; {profile.user.email||'No email'}</div></div>
+
+    {profile.residencies.length>1 && <>
+      <h3 className="mb-2" style={{fontSize:14}}>My Properties</h3>
+      {profile.residencies.map(r=><div key={r.id} className="card" style={{cursor:'pointer',borderColor:r.apartment_id===ctx?.activeApartment?'var(--accent)':'var(--border)'}} onClick={()=>switchApt(r.apartment_id)}>
+        <div className="flex-between"><div><div className="card-title">{r.unit_number} - {r.tower_name}</div><div className="card-sub">{r.society_name}</div></div>
+        <span className={`badge badge-${r.status==='approved'?'green':r.status==='pending'?'orange':'red'}`}>{r.resident_type}</span></div>
+      </div>)}
+    </>}
+
+    <div className="tab-bar mt-4">
+      {['info','vehicles','pets','family','invoices'].map(t=><button key={t} className={`tab ${tab===t?'active':''}`} onClick={()=>setTab(t)}>{t.charAt(0).toUpperCase()+t.slice(1)}</button>)}
+    </div>
+
+    {tab==='vehicles' && <div>
+      <div className="flex-between mb-2"><h3 style={{fontSize:14}}>Vehicles</h3><button className="btn btn-sm btn-primary" onClick={()=>setModal('vehicle')}>+ Add</button></div>
+      {profile.vehicles.map(v=><div key={v.id} className="card"><div className="card-title">{v.make} {v.model}</div><div className="card-sub">{v.registration_number} &bull; {v.color} {v.vehicle_type}</div></div>)}
+      {!profile.vehicles.length && <div className="empty">No vehicles registered</div>}
+    </div>}
+
+    {tab==='pets' && <div>
+      <div className="flex-between mb-2"><h3 style={{fontSize:14}}>Pets</h3><button className="btn btn-sm btn-primary" onClick={()=>setModal('pet')}>+ Add</button></div>
+      {profile.pets.map(p=><div key={p.id} className="card"><div className="card-title">{p.name}</div><div className="card-sub">{p.breed} &bull; {p.pet_type} &bull; {p.age_years}yrs &bull; {p.vaccinated?'Vaccinated':'Not vaccinated'}</div></div>)}
+      {!profile.pets.length && <div className="empty">No pets registered</div>}
+    </div>}
+
+    {tab==='family' && <div>
+      <div className="flex-between mb-2"><h3 style={{fontSize:14}}>Family & Tenants</h3><button className="btn btn-sm btn-primary" onClick={()=>setModal('family')}>+ Invite</button></div>
+      {[...profile.family,...profile.tenants].map(f=><div key={f.id} className="card"><div className="flex-between"><div><div className="card-title">{f.name}</div><div className="card-sub">{f.phone} &bull; {f.resident_type}</div></div><span className={`badge badge-${f.status==='approved'?'green':'orange'}`}>{f.status}</span></div></div>)}
+      {!profile.family.length && !profile.tenants.length && <div className="empty">No family members or tenants</div>}
+    </div>}
+
+    {tab==='invoices' && <div>
+      <h3 style={{fontSize:14}} className="mb-2">Invoices & Payments</h3>
+      {profile.invoices.map(i=><div key={i.id} className="card"><div className="flex-between"><div><div className="card-title">{i.description}</div><div className="card-sub">Rs. {i.amount}</div></div><span className={`badge badge-${i.status==='paid'?'green':'orange'}`}>{i.status}</span></div></div>)}
+      {!profile.invoices.length && <div className="empty">No invoices</div>}
+    </div>}
+
+    {tab==='info' && <div>
+      <div className="card"><div className="card-title">Current Residence</div><div className="card-sub">{ctx?.apartment?.unit_number} &bull; {ctx?.tower?.name} &bull; {ctx?.society?.name}</div>
+      {ctx?.resident && <div className="mt-2"><span className={`badge badge-${ctx.resident.status==='approved'?'green':'orange'}`}>{ctx.resident.resident_type} - {ctx.resident.status}</span></div>}
+      </div>
+      <button className="btn btn-secondary mt-4" style={{width:'100%'}} onClick={onLogout}>Sign Out</button>
+    </div>}
+
+    {modal==='vehicle' && <FormModal title="Add Vehicle" onClose={()=>setModal(null)} onSubmit={addVehicle}
+      fields={[{key:'vehicleType',label:'Type',type:'select',options:['car','bike','scooter','bicycle']},{key:'make',label:'Make'},{key:'model',label:'Model'},{key:'color',label:'Color'},{key:'registrationNumber',label:'Registration No.'}]}/>}
+    {modal==='pet' && <FormModal title="Add Pet" onClose={()=>setModal(null)} onSubmit={addPet}
+      fields={[{key:'petType',label:'Type',type:'select',options:['dog','cat','bird','fish','other']},{key:'name',label:'Name'},{key:'breed',label:'Breed'},{key:'ageYears',label:'Age (years)',type:'number'}]}/>}
+    {modal==='family' && <FormModal title="Invite Family Member" onClose={()=>setModal(null)} onSubmit={inviteFamily}
+      fields={[{key:'name',label:'Name'},{key:'phone',label:'Phone'}]}/>}
+  </div>;
+}
+
+function BookingsPage() {
+  const [spaces, setSpaces] = useState([]);
+  const [bookings, setBookings] = useState([]);
+  const [tab, setTab] = useState('spaces');
+  const [booking, setBooking] = useState(null);
+
+  useEffect(()=>{
+    api('/api/spaces').then(setSpaces);
+    api('/api/bookings/my').then(setBookings);
+  },[]);
+
+  const book = ()=>{
+    if(!booking?.spaceId||!booking?.date||!booking?.startTime||!booking?.endTime) return alert('Fill all fields');
+    api('/api/bookings',{method:'POST',body:JSON.stringify(booking)}).then(d=>{
+      if(d.error) return alert(d.error);
+      if(confirm(`Total: Rs. ${d.totalCost}. Pay now?`)){
+        api(`/api/bookings/${d.bookingId}/pay`,{method:'POST'}).then(p=>{
+          alert(`Paid! TXN: ${p.transactionId}`);
+          api('/api/bookings/my').then(setBookings);
+          setBooking(null);setTab('my');
+        });
+      }
+    });
+  };
+
+  return <div className="page">
+    <div className="page-title">Bookings</div>
+    <div className="tab-bar"><button className={`tab ${tab==='spaces'?'active':''}`} onClick={()=>setTab('spaces')}>Spaces</button><button className={`tab ${tab==='my'?'active':''}`} onClick={()=>setTab('my')}>My Bookings</button><button className={`tab ${tab==='book'?'active':''}`} onClick={()=>setTab('book')}>Book Now</button></div>
+
+    {tab==='spaces' && spaces.map(s=><div key={s.id} className="card" onClick={()=>{setBooking({spaceId:s.id,date:'',startTime:'',endTime:'',spotNumber:1});setTab('book');}}>
+      <div className="flex-between"><div><div className="card-title">{s.name}</div><div className="card-sub">{s.description}</div></div><div style={{textAlign:'right'}}><div style={{fontSize:16,fontWeight:700,color:'var(--accent2)',fontFamily:'Space Mono'}}>Rs.{s.cost_per_hour}/hr</div>
+      {s.is_shared?<div className="card-sub">{s.total_spots} spots</div>:null}</div></div>
+      <div className="mt-2 card-sub">{s.available_from} - {s.available_to} &bull; Cap: {s.capacity}</div>
+    </div>)}
+
+    {tab==='my' && <>
+      {bookings.map(b=><div key={b.id} className="card">
+        <div className="flex-between"><div><div className="card-title">{b.space_name}</div><div className="card-sub">{b.booking_date} {b.start_time}-{b.end_time}</div></div>
+        <div style={{textAlign:'right'}}><div style={{fontWeight:700,fontFamily:'Space Mono'}}>Rs.{b.total_cost}</div><span className={`badge badge-${b.status==='confirmed'?'green':b.status==='pending'?'orange':'red'}`}>{b.status}</span>
+        {b.invoice_status==='unpaid'&&<button className="btn btn-sm btn-primary mt-2" onClick={()=>{api(`/api/bookings/${b.id}/pay`,{method:'POST'}).then(()=>api('/api/bookings/my').then(setBookings));}}>Pay</button>}</div></div>
+      </div>)}
+      {!bookings.length && <div className="empty">No bookings yet</div>}
+    </>}
+
+    {tab==='book' && <div>
+      <div className="form-group"><label className="label">Space</label>
+      <select className="input" value={booking?.spaceId||''} onChange={e=>setBooking(b=>({...b,spaceId:e.target.value}))}>
+        <option value="">Select space</option>{spaces.map(s=><option key={s.id} value={s.id}>{s.name} - Rs.{s.cost_per_hour}/hr</option>)}</select></div>
+      <div className="form-group"><label className="label">Date</label><input type="date" className="input" value={booking?.date||''} onChange={e=>setBooking(b=>({...b,date:e.target.value}))}/></div>
+      <div className="grid-2">
+        <div className="form-group"><label className="label">Start</label><input type="time" className="input" value={booking?.startTime||''} onChange={e=>setBooking(b=>({...b,startTime:e.target.value}))}/></div>
+        <div className="form-group"><label className="label">End</label><input type="time" className="input" value={booking?.endTime||''} onChange={e=>setBooking(b=>({...b,endTime:e.target.value}))}/></div>
+      </div>
+      <button className="btn btn-primary" style={{width:'100%'}} onClick={book}>Book & Pay</button>
+    </div>}
+  </div>;
+}
+
+function VisitorsPage({ctx}) {
+  const [invites, setInvites] = useState([]);
+  const [tab, setTab] = useState('my');
+  const [modal, setModal] = useState(false);
+  const [moves, setMoves] = useState([]);
+
+  useEffect(()=>{
+    api('/api/visitors/my-invitations').then(setInvites);
+    api('/api/move-requests/my').then(setMoves);
+  },[]);
+
+  const createInvite = d=>{api('/api/visitors/invite',{method:'POST',body:JSON.stringify(d)}).then(r=>{
+    if(r.qrCode) alert(`Invite created! QR Code: ${r.qrCode}`);
+    api('/api/visitors/my-invitations').then(setInvites);setModal(false);
+  });};
+
+  const createMove = d=>{api('/api/move-requests',{method:'POST',body:JSON.stringify(d)}).then(()=>{api('/api/move-requests/my').then(setMoves);setModal(false);});};
+
+  return <div className="page">
+    <div className="page-title">Visitors & Moves</div>
+    <div className="tab-bar"><button className={`tab ${tab==='my'?'active':''}`} onClick={()=>setTab('my')}>Invitations</button><button className={`tab ${tab==='moves'?'active':''}`} onClick={()=>setTab('moves')}>Move Requests</button></div>
+
+    {tab==='my' && <>
+      <button className="btn btn-primary mb-4" style={{width:'100%'}} onClick={()=>setModal('invite')}>+ Create Invitation</button>
+      {invites.map(i=><div key={i.id} className="card">
+        <div className="flex-between"><div><div className="card-title">{i.visitor_name}</div><div className="card-sub">{i.visitor_type} &bull; {i.visitor_phone||''}</div></div>
+        <span className={`badge badge-${i.status==='active'?'green':i.status==='used'?'purple':'red'}`}>{i.status}</span></div>
+        {i.status==='active' && <div className="qr-box mt-2">{i.qr_code}</div>}
+      </div>)}
+      {!invites.length && <div className="empty">No invitations</div>}
+    </>}
+
+    {tab==='moves' && <>
+      <button className="btn btn-primary mb-4" style={{width:'100%'}} onClick={()=>setModal('move')}>+ Request Move In/Out</button>
+      {moves.map(m=><div key={m.id} className="card"><div className="flex-between"><div><div className="card-title">{m.move_type==='move_in'?'Move In':'Move Out'}</div><div className="card-sub">{m.tentative_start} to {m.tentative_end}</div></div><span className={`badge badge-${m.status==='approved'?'green':m.status==='pending'?'orange':'red'}`}>{m.status}</span></div></div>)}
+      {!moves.length && <div className="empty">No move requests</div>}
+    </>}
+
+    {modal==='invite' && <FormModal title="Create Invitation" onClose={()=>setModal(false)} onSubmit={createInvite}
+      fields={[{key:'visitorName',label:'Visitor Name'},{key:'visitorPhone',label:'Phone'},{key:'visitorType',label:'Type',type:'select',options:['guest','cab','delivery','daily_help','other']},{key:'purpose',label:'Purpose'},{key:'validFrom',label:'Valid From',type:'datetime-local'},{key:'validTo',label:'Valid To',type:'datetime-local'}]}/>}
+    {modal==='move' && <FormModal title="Move Request" onClose={()=>setModal(false)} onSubmit={createMove}
+      fields={[{key:'moveType',label:'Type',type:'select',options:['move_in','move_out']},{key:'tentativeStart',label:'Start Date',type:'date'},{key:'tentativeEnd',label:'End Date',type:'date'},{key:'notes',label:'Notes'}]}/>}
+  </div>;
+}
+
+function MarketplacePage() {
+  const [posts, setPosts] = useState([]);
+  const [modal, setModal] = useState(false);
+
+  useEffect(()=>{api('/api/marketplace').then(setPosts);},[]);
+
+  const create = d=>{api('/api/marketplace',{method:'POST',body:JSON.stringify(d)}).then(()=>{api('/api/marketplace').then(setPosts);setModal(false);});};
+
+  return <div className="page">
+    <div className="flex-between mb-4"><div className="page-title" style={{marginBottom:0}}>Marketplace</div><button className="btn btn-sm btn-primary" onClick={()=>setModal(true)}>+ Post</button></div>
+    {posts.map(p=><div key={p.id} className="card">
+      <div className="flex-between"><div><div className="card-title">{p.title}</div><div className="card-sub">{p.description}</div><div className="card-sub mt-2">by {p.posted_by}</div></div>
+      <div style={{textAlign:'right'}}><div style={{fontSize:16,fontWeight:700,color:'var(--green)',fontFamily:'Space Mono'}}>Rs.{p.price}</div><span className={`badge badge-${p.post_type==='sell'?'purple':'orange'}`}>{p.post_type}</span></div></div>
+    </div>)}
+    {!posts.length && <div className="empty">No posts in your society</div>}
+
+    {modal && <FormModal title="Create Post" onClose={()=>setModal(false)} onSubmit={create}
+      fields={[{key:'postType',label:'Type',type:'select',options:['buy','sell']},{key:'title',label:'Title'},{key:'description',label:'Description'},{key:'price',label:'Price',type:'number'}]}/>}
+  </div>;
+}
+
+function FormModal({title, onClose, onSubmit, fields}) {
+  const [data, setData] = useState({});
+  const set = (k,v)=>setData(d=>({...d,[k]:v}));
+  return <div className="modal-overlay" onClick={onClose}>
+    <div className="modal" onClick={e=>e.stopPropagation()}>
+      <h2>{title}</h2>
+      {fields.map(f=><div key={f.key} className="form-group">
+        <label className="label">{f.label}</label>
+        {f.type==='select' ? <select className="input" value={data[f.key]||''} onChange={e=>set(f.key,e.target.value)}><option value="">Select</option>{f.options.map(o=><option key={o} value={o}>{o}</option>)}</select>
+        : <input className="input" type={f.type||'text'} value={data[f.key]||''} onChange={e=>set(f.key,e.target.value)} placeholder={f.label}/>}
+      </div>)}
+      <div className="flex" style={{gap:10,marginTop:16}}>
+        <button className="btn btn-primary" style={{flex:1}} onClick={()=>onSubmit(data)}>Submit</button>
+        <button className="btn btn-secondary" style={{flex:1}} onClick={onClose}>Cancel</button>
+      </div>
+    </div>
+  </div>;
+}
+
+ReactDOM.render(<App/>, document.getElementById('root'));
+</script>
+</body>
+</html>

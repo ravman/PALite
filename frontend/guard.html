@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>GateKeeper Guard App</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0d1117;--card:#161b22;--accent:#58a6ff;--green:#3fb950;--red:#f85149;--orange:#d29922;--text:#e6edf3;--text2:#8b949e;--border:#30363d;--radius:12px}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+.app{max-width:480px;margin:0 auto;padding-bottom:80px}
+.header{padding:16px 20px;background:var(--card);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
+.header h1{font-size:18px;font-weight:700;color:var(--accent)}
+.header .sub{font-size:11px;color:var(--text2)}
+.nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;background:var(--card);border-top:1px solid var(--border);display:flex;padding:8px 0;z-index:100}
+.nav button{flex:1;background:none;border:none;color:var(--text2);font-size:11px;padding:8px;cursor:pointer;font-family:inherit;transition:.2s}
+.nav button.active{color:var(--accent)}
+.page{padding:16px 20px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:12px}
+.badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600}
+.badge-green{background:rgba(63,185,80,.15);color:var(--green)}
+.badge-red{background:rgba(248,81,73,.15);color:var(--red)}
+.badge-orange{background:rgba(210,153,34,.15);color:var(--orange)}
+.badge-blue{background:rgba(88,166,255,.15);color:var(--accent)}
+.btn{padding:10px 20px;border:none;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;transition:.2s;width:100%}
+.btn-primary{background:var(--accent);color:#0d1117}.btn-primary:hover{opacity:.9}
+.btn-green{background:var(--green);color:white}
+.btn-red{background:var(--red);color:white}
+.btn-sm{padding:6px 14px;font-size:11px;width:auto}
+.input{width:100%;padding:10px 14px;border:1px solid var(--border);border-radius:10px;background:#0d1117;color:var(--text);font-size:13px;font-family:inherit;outline:none}
+.input:focus{border-color:var(--accent)}
+.label{font-size:12px;color:var(--text2);margin-bottom:4px;display:block}
+.form-group{margin-bottom:14px}
+.flex{display:flex;align-items:center;gap:8px}
+.flex-between{display:flex;align-items:center;justify-content:space-between}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.qr-input{background:var(--card);border:2px dashed var(--border);border-radius:16px;padding:40px 20px;text-align:center;cursor:pointer;transition:.2s}
+.qr-input:hover{border-color:var(--accent)}
+.qr-result{background:var(--card);border:2px solid var(--green);border-radius:16px;padding:20px}
+.login{display:flex;align-items:center;justify-content:center;min-height:100vh;flex-direction:column;gap:16px;padding:20px}
+.login h1{font-size:28px;color:var(--accent)}
+.empty{text-align:center;padding:40px;color:var(--text2)}
+.tab-bar{display:flex;gap:6px;margin-bottom:16px}
+.tab{padding:6px 14px;border-radius:20px;font-size:12px;font-weight:600;border:1px solid var(--border);background:none;color:var(--text2);cursor:pointer;font-family:inherit}
+.tab.active{background:var(--accent);color:#0d1117;border-color:var(--accent)}
+select.input{appearance:none}
+</style></head><body><div id="root"></div>
+<script type="text/babel">
+const {useState,useEffect,useCallback} = React;
+
+function api(path, opts={}) {
+  const token = localStorage.getItem('gk_guard_token');
+  const headers = {'Content-Type':'application/json'};
+  if(token) headers['Authorization'] = `Bearer ${token}`;
+  return fetch(path, {...opts, headers}).then(r=>r.json());
+}
+
+function App() {
+  const [token,setToken]=useState(localStorage.getItem('gk_guard_token'));
+  const [user,setUser]=useState(null);
+  const [ctx,setCtx]=useState(null);
+  const [page,setPage]=useState('scan');
+  const [loading,setLoading]=useState(true);
+
+  const loadMe=useCallback(()=>{
+    if(!token){setLoading(false);return;}
+    api('/api/auth/me').then(d=>{
+      if(d.error){localStorage.removeItem('gk_guard_token');setToken(null);}
+      else{setUser(d.user);setCtx(d);}
+      setLoading(false);
+    });
+  },[token]);
+  useEffect(()=>{loadMe();},[loadMe]);
+
+  const handleLogin=t=>{localStorage.setItem('gk_guard_token',t);setToken(t);setLoading(true);setTimeout(loadMe,100);};
+
+  if(loading) return <div className="login"><h1>Loading...</h1></div>;
+  if(!token) return <LoginPage onLogin={handleLogin}/>;
+
+  return <div className="app">
+    <div className="header"><div><h1>GateKeeper Guard</h1><div className="sub">{ctx?.society?.name||'No Society'}</div></div>
+      <button className="btn-sm btn-red" style={{border:'none',borderRadius:8,padding:'6px 12px',fontSize:11,cursor:'pointer',fontFamily:'inherit',fontWeight:600,background:'var(--red)',color:'white'}} onClick={()=>{localStorage.removeItem('gk_guard_token');setToken(null);}}>Logout</button></div>
+    {page==='scan'&&<ScanPage/>}
+    {page==='entry'&&<EntryPage/>}
+    {page==='log'&&<LogPage/>}
+    {page==='delivery'&&<DeliveryPage/>}
+    <div className="nav">
+      {[['scan','Scan QR'],['entry','New Entry'],['log','Entry Log'],['delivery','Deliveries']].map(([k,l])=>
+        <button key={k} className={page===k?'active':''} onClick={()=>setPage(k)}>{l}</button>)}
+    </div>
+  </div>;
+}
+
+function LoginPage({onLogin}) {
+  const [phone,setPhone]=useState('');const [otp,setOtp]=useState('');const [sid,setSid]=useState('');const [step,setStep]=useState('phone');
+  const send=()=>api('/api/auth/request-otp',{method:'POST',body:JSON.stringify({phone})}).then(d=>{if(d.success){setSid(d.sessionId);setStep('otp');}});
+  const verify=()=>api('/api/auth/verify-otp',{method:'POST',body:JSON.stringify({sessionId:sid,otp})}).then(d=>{if(d.token)onLogin(d.token);});
+  return <div className="login">
+    <h1>Guard App</h1>
+    <p style={{color:'var(--text2)'}}>GateKeeper Security</p>
+    <div style={{width:'100%',maxWidth:320}}>
+      {step==='phone'?<><div className="form-group"><label className="label">Phone</label><input className="input" value={phone} onChange={e=>setPhone(e.target.value)} placeholder="Guard phone"/></div>
+        <button className="btn btn-primary" onClick={send}>Send OTP</button>
+        <p style={{fontSize:11,color:'var(--text2)',marginTop:8}}>Demo: 9999900002 (Green Valley) | 9999900004 (Sunrise)</p></>
+      :<><div className="form-group"><label className="label">OTP</label><input className="input" value={otp} onChange={e=>setOtp(e.target.value)} placeholder="123456"/></div>
+        <button className="btn btn-primary" onClick={verify}>Verify</button></>}
+    </div>
+  </div>;
+}
+
+function ScanPage() {
+  const [qr,setQr]=useState('');const [result,setResult]=useState(null);const [err,setErr]=useState('');
+  const scan=()=>{
+    setErr('');setResult(null);
+    api('/api/guard/scan-qr',{method:'POST',body:JSON.stringify({qrCode:qr})}).then(d=>{
+      if(d.error) setErr(d.error);
+      else setResult(d);
+    });
+  };
+  const createEntry=(inv)=>{
+    api('/api/guard/create-entry',{method:'POST',body:JSON.stringify({
+      visitorName:inv.visitor_name,visitorPhone:inv.visitor_phone,visitorType:inv.visitor_type,
+      apartmentId:inv.apartment_id,invitationId:inv.id
+    })}).then(d=>{if(d.success){alert('Entry created & approval sent!');setResult(null);setQr('');}});
+  };
+
+  return <div className="page">
+    <h2 style={{fontSize:20,marginBottom:16}}>Scan QR Code</h2>
+    <div className="form-group">
+      <label className="label">Enter QR Code</label>
+      <input className="input" value={qr} onChange={e=>setQr(e.target.value)} placeholder="QR-XXXXXXXX or QR-DH-XXXXXX" style={{fontFamily:'Space Mono',fontSize:16,textAlign:'center',padding:16}}/>
+    </div>
+    <button className="btn btn-primary" onClick={scan}>Verify QR Code</button>
+    {err&&<div className="card" style={{marginTop:16,borderColor:'var(--red)'}}><span style={{color:'var(--red)'}}>Invalid QR code - not found or expired</span></div>}
+    {result&&result.type==='visitor'&&<div className="qr-result" style={{marginTop:16}}>
+      <h3 style={{color:'var(--green)',marginBottom:8}}>Valid Visitor Invitation</h3>
+      <div style={{fontSize:15,fontWeight:600}}>{result.invitation.visitor_name}</div>
+      <div style={{color:'var(--text2)',fontSize:13}}>{result.invitation.visitor_type} &bull; {result.invitation.visitor_phone}</div>
+      <div style={{color:'var(--text2)',fontSize:13,marginTop:4}}>Apartment: {result.invitation.unit_number} - {result.invitation.tower_name}</div>
+      <div style={{color:'var(--text2)',fontSize:13}}>Purpose: {result.invitation.purpose}</div>
+      <button className="btn btn-green" style={{marginTop:12}} onClick={()=>createEntry(result.invitation)}>Allow Entry & Notify Resident</button>
+    </div>}
+    {result&&result.type==='daily_help'&&<div className="qr-result" style={{marginTop:16}}>
+      <h3 style={{color:'var(--green)',marginBottom:8}}>Approved Daily Help</h3>
+      <div style={{fontSize:15,fontWeight:600}}>{result.dailyHelp.name}</div>
+      <div style={{color:'var(--text2)',fontSize:13}}>{result.dailyHelp.help_type} &bull; ID: {result.dailyHelp.id_code}</div>
+      <div style={{marginTop:8}}><b style={{fontSize:12}}>Assigned Apartments:</b>
+        {result.assignments?.map(a=><div key={a.id} style={{color:'var(--text2)',fontSize:12,marginTop:4}}>{a.unit_number} - {a.tower_name} ({a.days_of_week}) {a.time_slot}</div>)}</div>
+      <button className="btn btn-green" style={{marginTop:12}} onClick={()=>alert('Entry logged')}>Log Entry</button>
+    </div>}
+  </div>;
+}
+
+function EntryPage() {
+  const [data,setData]=useState({visitorType:'guest'});
+  const [apts,setApts]=useState([]);const [towers,setTowers]=useState([]);const [tower,setTower]=useState('');
+  const set=(k,v)=>setData(d=>({...d,[k]:v}));
+
+  useEffect(()=>{api('/api/admin/towers').catch(()=>{}).then(d=>setTowers(d||[]));},[]);
+  useEffect(()=>{if(tower) fetch('/api/lookup/apartments?towerId='+tower).then(r=>r.json()).then(setApts);},[tower]);
+
+  const submit=()=>{
+    if(!data.visitorName) return alert('Name required');
+    api('/api/guard/create-entry',{method:'POST',body:JSON.stringify(data)}).then(d=>{
+      if(d.success){alert('Entry created! Approval request sent.');setData({visitorType:'guest'});}
+      else alert(d.error||'Failed');
+    });
+  };
+
+  return <div className="page">
+    <h2 style={{fontSize:20,marginBottom:16}}>Manual Entry</h2>
+    <div className="form-group"><label className="label">Visitor Name</label><input className="input" value={data.visitorName||''} onChange={e=>set('visitorName',e.target.value)}/></div>
+    <div className="form-group"><label className="label">Phone</label><input className="input" value={data.visitorPhone||''} onChange={e=>set('visitorPhone',e.target.value)}/></div>
+    <div className="form-group"><label className="label">Type</label>
+      <select className="input" value={data.visitorType} onChange={e=>set('visitorType',e.target.value)}>
+        {['guest','cab','delivery','daily_help','other'].map(t=><option key={t} value={t}>{t}</option>)}</select></div>
+    <div className="form-group"><label className="label">Tower</label>
+      <select className="input" value={tower} onChange={e=>setTower(e.target.value)}>
+        <option value="">Select tower</option>{towers.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
+    {tower&&<div className="form-group"><label className="label">Apartment</label>
+      <select className="input" value={data.apartmentId||''} onChange={e=>set('apartmentId',e.target.value)}>
+        <option value="">Select apartment</option>{apts.map(a=><option key={a.id} value={a.id}>{a.unit_number} (Floor {a.floor})</option>)}</select></div>}
+    <div className="form-group"><label className="label">Notes</label><input className="input" value={data.notes||''} onChange={e=>set('notes',e.target.value)}/></div>
+    <button className="btn btn-primary" onClick={submit}>Create Entry & Send Approval</button>
+  </div>;
+}
+
+function LogPage() {
+  const [entries,setEntries]=useState([]);const [filter,setFilter]=useState('');
+  const load=()=>api('/api/guard/entries'+(filter?'?status='+filter:'')).then(setEntries);
+  useEffect(()=>{load();},[filter]);
+  const markExit=id=>api(`/api/guard/entries/${id}/exit`,{method:'POST'}).then(load);
+
+  return <div className="page">
+    <h2 style={{fontSize:20,marginBottom:16}}>Entry Log</h2>
+    <div className="tab-bar">
+      {['','pending','approved','rejected'].map(f=><button key={f} className={`tab ${filter===f?'active':''}`} onClick={()=>setFilter(f)}>{f||'All'}</button>)}
+    </div>
+    {entries.map(e=><div key={e.id} className="card">
+      <div className="flex-between"><div><div style={{fontWeight:600}}>{e.visitor_name}</div><div style={{fontSize:12,color:'var(--text2)'}}>{e.visitor_type} &bull; {e.visitor_phone||'N/A'}</div>
+        <div style={{fontSize:12,color:'var(--text2)'}}>{e.unit_number} - {e.tower_name}</div></div>
+        <div style={{textAlign:'right'}}><span className={`badge badge-${e.approval_status==='approved'?'green':e.approval_status==='pending'?'orange':'red'}`}>{e.approval_status}</span>
+          <div style={{fontSize:11,color:'var(--text2)',marginTop:4}}>{e.entry_time?.split('T')[1]?.slice(0,5)||''}</div>
+          {e.approval_status==='approved'&&!e.exit_time&&<button className="btn-sm" style={{marginTop:4,background:'var(--orange)',color:'white',border:'none',borderRadius:6,cursor:'pointer',fontSize:10,padding:'4px 8px',fontFamily:'inherit'}} onClick={()=>markExit(e.id)}>Mark Exit</button>}
+        </div></div>
+    </div>)}
+    {!entries.length&&<div className="empty">No entries</div>}
+  </div>;
+}
+
+function DeliveryPage() {
+  const [dels,setDels]=useState([]);
+  useEffect(()=>{api('/api/guard/delivery-entries').then(setDels);},[]);
+  return <div className="page">
+    <h2 style={{fontSize:20,marginBottom:16}}>Delivery Tracking</h2>
+    {dels.map(d=><div key={d.id} className="card">
+      <div style={{fontWeight:600,marginBottom:8}}>{d.visitor_name} <span className="badge badge-blue">delivery</span></div>
+      <div style={{fontSize:12,color:'var(--text2)',marginBottom:8}}>Phone: {d.visitor_phone||'N/A'}</div>
+      <div style={{fontSize:12,fontWeight:600,marginBottom:4}}>Apartments:</div>
+      {d.apartments?.map(a=><div key={a.id} className="flex-between" style={{padding:'6px 0',borderBottom:'1px solid var(--border)'}}>
+        <span style={{fontSize:13}}>{a.unit_number} - {a.tower_name}</span>
+        <span className={`badge badge-${a.approval_status==='approved'?'green':a.approval_status==='pending'?'orange':'red'}`}>{a.approval_status}</span>
+      </div>)}
+    </div>)}
+    {!dels.length&&<div className="empty">No delivery entries</div>}
+  </div>;
+}
+
+ReactDOM.render(<App/>, document.getElementById('root'));
+</script></body></html>
