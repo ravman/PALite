@@ -422,7 +422,7 @@ function App() {
     if(resident && (resident.status==='pending' || resident.status==='rejected')) {
       content = <PendingScreen resident={resident} user={user} onLogout={handleLogout} onRefresh={loadMe}/>;
     } else {
-      const pages = {home:<HomePage ctx={ctx} setPage={setPage}/>,profile:<ProfilePage ctx={ctx} user={user} onLogout={handleLogout} switchApt={switchApt} reload={loadMe} setPage={setPage}/>,bookings:<BookingsPage setPage={setPage} prefill={voiceAction?.page==='bookings'?voiceAction.prefill:null}/>,visitors:<VisitorsPage ctx={ctx} setPage={setPage} prefill={voiceAction?.page==='visitors'?voiceAction.prefill:null}/>,marketplace:<MarketplacePage setPage={setPage} prefill={voiceAction?.page==='marketplace'?voiceAction.prefill:null}/>,payments:<PaymentsPage setPage={setPage}/>,locks:<LocksPage setPage={setPage}/>,news:<NewsPage setPage={setPage}/>};
+      const pages = {home:<HomePage ctx={ctx} setPage={setPage}/>,profile:<ProfilePage ctx={ctx} user={user} onLogout={handleLogout} switchApt={switchApt} reload={loadMe} setPage={setPage}/>,bookings:<BookingsPage setPage={setPage} prefill={voiceAction?.page==='bookings'?voiceAction.prefill:null}/>,visitors:<VisitorsPage ctx={ctx} setPage={setPage} prefill={voiceAction?.page==='visitors'?voiceAction.prefill:null}/>,marketplace:<MarketplacePage setPage={setPage} prefill={voiceAction?.page==='marketplace'?voiceAction.prefill:null}/>,payments:<PaymentsPage setPage={setPage}/>,locks:<LocksPage setPage={setPage}/>,news:<NewsPage setPage={setPage}/>,admin:<AdminPanelPage setPage={setPage} ctx={ctx}/>};
       content = <div className="app">
         {voiceOpen && <VoiceAssistant
           onNavigate={(page, prefill)=>{setPage(page); setVoiceAction({page, prefill: prefill||{}}); setTimeout(()=>setVoiceAction(null), 5000);}}
@@ -717,6 +717,378 @@ function SignupPage({sessionId, phone, onDone}) {
   return null;
 }
 
+// ─── Admin Panel (in-app) ─────────────────────────────────────────────────────
+function AdminPanelPage({setPage, ctx}) {
+  const [tab, setTab]           = useState('overview');
+  const [stats, setStats]       = useState(null);
+  const [residents, setResidents] = useState([]);
+  const [moves, setMoves]       = useState([]);
+  const [invoices, setInvoices] = useState([]);
+  const [docs, setDocs]         = useState([]);
+  const [rejectTarget, setRejectTarget] = useState(null); // {type, id, name}
+  const [rejectReason, setRejectReason] = useState('');
+  const [rejectErr, setRejectErr]       = useState('');
+  const [raiseModal, setRaiseModal]     = useState(false);
+  const [invoiceForm, setInvoiceForm]   = useState({title:'',invoiceType:'maintenance',amount:'',dueDate:'',description:'',target:'all',residentTypes:[]});
+  const [invPreview, setInvPreview]     = useState(null);
+  const [submitting, setSubmitting]     = useState(null);
+
+  const [leases, setLeases]         = useState([]);
+
+  const load = () => {
+    api('/api/admin/dashboard').then(d=>{ if(!d.error) setStats(d); });
+    api('/api/admin/residents?status=pending').then(setResidents);
+    api('/api/admin/move-requests').then(d=>setMoves((d||[]).filter(m=>m.status==='pending')));
+    api('/api/admin/lease-extensions').then(d=>setLeases((d||[]).filter(l=>l.status==='pending')));
+    api('/api/admin/invoices').then(setInvoices);
+    api('/api/admin/documents').then(d=>setDocs((d||[]).filter(x=>x.status==='pending')));
+  };
+  useEffect(()=>{ load(); },[]);
+
+  // Live preview for raise invoice
+  useEffect(()=>{
+    if(!raiseModal) return;
+    api('/api/admin/invoices/preview-recipients',{method:'POST',body:JSON.stringify({target:invoiceForm.target,residentTypes:invoiceForm.residentTypes})})
+      .then(d=>setInvPreview(Array.isArray(d)?d:[]));
+  },[invoiceForm.target, invoiceForm.residentTypes.join(','), raiseModal]);
+
+  const approve = async (type, id) => {
+    setSubmitting(id);
+    const url = type==='resident' ? `/api/admin/residents/${id}/approve`
+              : type==='move'     ? `/api/admin/move-requests/${id}/approve`
+              : type==='lease'    ? `/api/admin/lease-extensions/${id}/approve`
+              : type==='doc'      ? `/api/admin/documents/${id}/verify` : null;
+    if(url) await api(url, {method:'POST'});
+    setSubmitting(null); load();
+  };
+
+  const openReject = (type, id, name) => { setRejectTarget({type,id,name}); setRejectReason(''); setRejectErr(''); };
+  const submitReject = async () => {
+    if(!rejectReason.trim()) return setRejectErr('Please provide a reason');
+    const {type, id} = rejectTarget;
+    const url = type==='resident' ? `/api/admin/residents/${id}/reject`
+              : type==='move'     ? `/api/admin/move-requests/${id}/reject`
+              : type==='lease'    ? `/api/admin/lease-extensions/${id}/reject` : null;
+    if(!url) return setRejectErr('Cannot reject this type');
+    const body = (type==='resident'||type==='move') ? JSON.stringify({reason:rejectReason}) : JSON.stringify({});
+    const res = await api(url, {method:'POST', body});
+    if(res.error) return setRejectErr(res.error);
+    setRejectTarget(null); load();
+  };
+
+  const raiseInvoice = async () => {
+    if(!invoiceForm.title.trim()) return alert('Title required');
+    if(!invoiceForm.amount || isNaN(invoiceForm.amount)) return alert('Valid amount required');
+    setSubmitting('inv');
+    const res = await api('/api/admin/invoices',{method:'POST',body:JSON.stringify(invoiceForm)});
+    setSubmitting(null);
+    if(res.error) return alert(res.error);
+    setRaiseModal(false); load();
+  };
+
+  const toggleResType = t => setInvoiceForm(f=>({...f,residentTypes:f.residentTypes.includes(t)?f.residentTypes.filter(x=>x!==t):[...f.residentTypes,t]}));
+
+  const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN',{day:'numeric',month:'short'}) : '';
+  const TYPE_ICONS = {maintenance:'🔧',repair:'🛠',utility:'💡',amenity:'🏊',event:'🎉',other:'📄'};
+  const RES_TYPES  = ['owner','owner_family','tenant','tenant_family'];
+
+  const StatCard = ({icon,label,value,color='var(--accent)'}) => (
+    <div style={{background:'var(--card)',borderRadius:14,padding:'14px 16px',border:'1px solid var(--border)',flex:1,minWidth:0}}>
+      <div style={{fontSize:22,marginBottom:4}}>{icon}</div>
+      <div style={{fontSize:22,fontWeight:800,color,fontFamily:'Space Mono'}}>{value??'—'}</div>
+      <div style={{fontSize:11,color:'var(--text2)',marginTop:2}}>{label}</div>
+    </div>
+  );
+
+  const ApproveRow = ({label, sub, type, id, name, extraBadge}) => (
+    <div style={{background:'var(--card2)',borderRadius:12,padding:'12px 14px',marginBottom:8,border:'1px solid var(--border)'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:8}}>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontWeight:600,fontSize:14,color:'var(--text)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{label}</div>
+          <div style={{fontSize:12,color:'var(--text2)',marginTop:2}}>{sub}</div>
+          {extraBadge && <span style={{fontSize:10,padding:'2px 7px',borderRadius:8,background:'rgba(108,92,231,.2)',color:'var(--accent)',fontWeight:700,display:'inline-block',marginTop:4}}>{extraBadge}</span>}
+        </div>
+        <div style={{display:'flex',gap:6,flexShrink:0}}>
+          <button onClick={()=>approve(type,id)}
+            disabled={submitting===id}
+            style={{padding:'7px 12px',borderRadius:9,background:'rgba(0,184,148,.15)',border:'1px solid rgba(0,184,148,.3)',color:'var(--green)',fontWeight:700,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>
+            ✓ Approve
+          </button>
+          {type!=='doc' && <button onClick={()=>openReject(type,id,name)}
+            style={{padding:'7px 12px',borderRadius:9,background:'rgba(225,112,85,.12)',border:'1px solid rgba(225,112,85,.25)',color:'var(--red)',fontWeight:700,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>
+            ✕
+          </button>}
+        </div>
+      </div>
+    </div>
+  );
+
+  return <div style={{paddingBottom:100}}>
+    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'16px 20px 8px'}}>
+      <div style={{display:'flex',alignItems:'center',gap:10}}>
+        <button onClick={()=>setPage('home')} style={{background:'none',border:'none',color:'var(--text2)',cursor:'pointer',padding:0}}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <h2 style={{margin:0,fontSize:20}}>Admin Panel</h2>
+      </div>
+      <button onClick={()=>setRaiseModal(true)}
+        style={{padding:'8px 14px',borderRadius:10,background:'var(--accent)',border:'none',color:'white',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}>
+        + Invoice
+      </button>
+    </div>
+
+    {/* Society badge */}
+    <div style={{margin:'0 20px 14px',padding:'8px 14px',background:'rgba(108,92,231,.1)',borderRadius:10,fontSize:12,color:'var(--accent)',fontWeight:600}}>
+      🏘 {ctx?.society?.name || 'Society'} · Admin View
+    </div>
+
+    {/* Tab bar */}
+    <div style={{display:'flex',gap:0,padding:'0 20px',marginBottom:16,overflowX:'auto'}}>
+      {[['overview','Overview'],['residents','Residents'],['moves','Moves'],['leases','Leases'],['invoices','Invoices'],['docs','Docs']].map(([k,l])=>(
+        <button key={k} onClick={()=>setTab(k)} style={{
+          padding:'8px 14px',borderRadius:20,border:'none',fontFamily:'inherit',fontWeight:600,fontSize:13,cursor:'pointer',whiteSpace:'nowrap',marginRight:6,
+          background:tab===k?'var(--accent)':'var(--card2)',
+          color:tab===k?'white':'var(--text2)'}}>
+          {l}
+          {k==='residents'&&residents.length>0&&<span style={{marginLeft:5,background:'var(--red)',borderRadius:8,padding:'1px 5px',fontSize:10,color:'white'}}>{residents.length}</span>}
+          {k==='moves'&&moves.length>0&&<span style={{marginLeft:5,background:'var(--red)',borderRadius:8,padding:'1px 5px',fontSize:10,color:'white'}}>{moves.length}</span>}
+          {k==='leases'&&leases.length>0&&<span style={{marginLeft:5,background:'var(--red)',borderRadius:8,padding:'1px 5px',fontSize:10,color:'white'}}>{leases.length}</span>}
+          {k==='docs'&&docs.length>0&&<span style={{marginLeft:5,background:'var(--red)',borderRadius:8,padding:'1px 5px',fontSize:10,color:'white'}}>{docs.length}</span>}
+        </button>
+      ))}
+    </div>
+
+    <div style={{padding:'0 20px'}}>
+
+      {/* ── Overview ── */}
+      {tab==='overview' && <>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:16}}>
+          <StatCard icon="👥" label="Total Residents" value={stats?.totalResidents}/>
+          <StatCard icon="⏳" label="Pending Approvals" value={stats?.pendingApprovals} color="var(--orange)"/>
+          <StatCard icon="🚚" label="Pending Moves" value={stats?.pendingMoves} color="var(--orange)"/>
+          <StatCard icon="📄" label="Pending Docs" value={stats?.pendingDocuments} color="var(--orange)"/>
+        </div>
+        {(residents.length+moves.length+leases.length+docs.length)>0 && <>
+          <h3 style={{fontSize:13,fontWeight:700,color:'var(--text2)',marginBottom:10,letterSpacing:0.5,textTransform:'uppercase'}}>Needs Attention</h3>
+          {residents.slice(0,2).map(r=><ApproveRow key={r.id} type="resident" id={r.id} name={r.name}
+            label={r.name} sub={`${r.unit_number} · ${r.tower_name} · ${r.phone}`} extraBadge={r.resident_type?.replace(/_/g,' ')}/>)}
+          {moves.slice(0,2).map(m=><ApproveRow key={m.id} type="move" id={m.id} name={m.name}
+            label={m.name} sub={`${m.move_type==='move_in'?'📦 Move In':'🚚 Move Out'} · ${m.unit_number} · ${fmtDate(m.tentative_start)}`}/>)}
+          {leases.slice(0,2).map(l=><ApproveRow key={l.id} type="lease" id={l.id} name={l.name}
+            label={l.name} sub={`📋 Lease Extension · ${l.unit_number} · until ${fmtDate(l.requested_end)}`}/>)}
+          {(residents.length+moves.length+leases.length)>6&&<div style={{fontSize:13,color:'var(--text2)',textAlign:'center',padding:'8px 0'}}>+ more — see individual tabs</div>}
+        </>}
+        {(residents.length+moves.length+leases.length+docs.length)===0&&<div style={{textAlign:'center',padding:'40px 0'}}>
+          <div style={{fontSize:40,marginBottom:8}}>✅</div>
+          <div style={{fontWeight:700,color:'var(--text)'}}>All clear!</div>
+          <div style={{fontSize:13,color:'var(--text2)'}}>No pending approvals.</div>
+        </div>}
+      </>}
+
+      {/* ── Residents ── */}
+      {tab==='residents' && <>
+        <div style={{marginBottom:12,fontSize:13,color:'var(--text2)'}}>{residents.length} pending sign-up approval{residents.length!==1?'s':''}</div>
+        {residents.map(r=><ApproveRow key={r.id} type="resident" id={r.id} name={r.name}
+          label={r.name} sub={`${r.unit_number} · ${r.tower_name} · ${r.phone}`}
+          extraBadge={r.resident_type?.replace(/_/g,' ')}/>)}
+        {!residents.length&&<div style={{textAlign:'center',padding:'40px 0',color:'var(--text2)'}}>No pending resident applications</div>}
+      </>}
+
+      {/* ── Move Requests ── */}
+      {tab==='moves' && <>
+        <div style={{marginBottom:12,fontSize:13,color:'var(--text2)'}}>{moves.length} pending move request{moves.length!==1?'s':''}</div>
+        {moves.map(m=><div key={m.id} style={{background:'var(--card2)',borderRadius:12,padding:'12px 14px',marginBottom:8,border:'1px solid var(--border)'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
+            <div>
+              <div style={{fontWeight:600,fontSize:14}}>{m.name}</div>
+              <div style={{fontSize:12,color:'var(--text2)',marginTop:2}}>
+                {m.move_type==='move_in'?'📦 Move In':'🚚 Move Out'} · {m.unit_number} · {fmtDate(m.tentative_start)} – {fmtDate(m.tentative_end)}
+              </div>
+              {m.documents?.length>0&&<div style={{fontSize:11,color:'var(--text2)',marginTop:3}}>📎 {m.documents.length} doc{m.documents.length!==1?'s':''} attached</div>}
+            </div>
+          </div>
+          <div style={{display:'flex',gap:6}}>
+            <button onClick={()=>approve('move',m.id)} disabled={submitting===m.id}
+              style={{flex:1,padding:'9px 0',borderRadius:9,background:'rgba(0,184,148,.15)',border:'1px solid rgba(0,184,148,.3)',color:'var(--green)',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}>
+              ✓ Approve
+            </button>
+            <button onClick={()=>openReject('move',m.id,m.name)}
+              style={{flex:1,padding:'9px 0',borderRadius:9,background:'rgba(225,112,85,.12)',border:'1px solid rgba(225,112,85,.25)',color:'var(--red)',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}>
+              ✕ Reject
+            </button>
+          </div>
+        </div>)}
+        {!moves.length&&<div style={{textAlign:'center',padding:'40px 0',color:'var(--text2)'}}>No pending move requests</div>}
+      </>}
+
+      {/* ── Lease Extensions ── */}
+      {tab==='leases' && <>
+        <div style={{marginBottom:12,fontSize:13,color:'var(--text2)'}}>{leases.length} pending lease extension{leases.length!==1?'s':''}</div>
+        {leases.map(l=><div key={l.id} style={{background:'var(--card2)',borderRadius:12,padding:'12px 14px',marginBottom:8,border:'1px solid var(--border)'}}>
+          <div style={{marginBottom:10}}>
+            <div style={{fontWeight:600,fontSize:14}}>{l.name}</div>
+            <div style={{fontSize:12,color:'var(--text2)',marginTop:2}}>
+              📋 {l.unit_number} · {l.tower_name} · {l.phone}
+            </div>
+            <div style={{fontSize:12,color:'var(--text2)',marginTop:2}}>
+              Extension to: <strong style={{color:'var(--text)'}}>{fmtDate(l.requested_end)}</strong>
+            </div>
+            {l.notes&&<div style={{fontSize:12,color:'var(--text2)',marginTop:4,fontStyle:'italic'}}>"{l.notes}"</div>}
+          </div>
+          <div style={{display:'flex',gap:6}}>
+            <button onClick={()=>approve('lease',l.id)} disabled={submitting===l.id}
+              style={{flex:1,padding:'9px 0',borderRadius:9,background:'rgba(0,184,148,.15)',border:'1px solid rgba(0,184,148,.3)',color:'var(--green)',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}>
+              ✓ Approve
+            </button>
+            <button onClick={()=>openReject('lease',l.id,l.name)}
+              style={{flex:1,padding:'9px 0',borderRadius:9,background:'rgba(225,112,85,.12)',border:'1px solid rgba(225,112,85,.25)',color:'var(--red)',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}>
+              ✕ Reject
+            </button>
+          </div>
+        </div>)}
+        {!leases.length&&<div style={{textAlign:'center',padding:'40px 0',color:'var(--text2)'}}>No pending lease extensions</div>}
+      </>}
+
+      {/* ── Invoices ── */}
+      {tab==='invoices' && <>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+          <span style={{fontSize:13,color:'var(--text2)'}}>{invoices.length} invoice{invoices.length!==1?'s':''}</span>
+          <button onClick={()=>setRaiseModal(true)}
+            style={{padding:'7px 14px',borderRadius:9,background:'var(--accent)',border:'none',color:'white',fontWeight:700,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>
+            + Raise Invoice
+          </button>
+        </div>
+        {invoices.map(inv=>{
+          const isBulk=inv.recipient_count>0;
+          const paid=isBulk?inv.paid_count>=inv.recipient_count:inv.status==='paid';
+          const part=isBulk&&inv.paid_count>0&&inv.paid_count<inv.recipient_count;
+          return <div key={inv.id} style={{background:'var(--card2)',borderRadius:12,padding:'12px 14px',marginBottom:8,border:'1px solid var(--border)'}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+              <div style={{flex:1}}>
+                <div style={{fontWeight:600,fontSize:14}}>{TYPE_ICONS[inv.invoice_type]||'📄'} {inv.title}</div>
+                {inv.due_date&&<div style={{fontSize:11,color:'var(--text2)',marginTop:2}}>Due {fmtDate(inv.due_date)}</div>}
+              </div>
+              <div style={{textAlign:'right'}}>
+                <div style={{fontWeight:800,fontFamily:'Space Mono',fontSize:15}}>₹{Number(inv.amount).toLocaleString('en-IN')}</div>
+                <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:8,
+                  background:paid?'rgba(0,184,148,.15)':part?'rgba(253,203,110,.15)':'rgba(253,203,110,.15)',
+                  color:paid?'var(--green)':part?'var(--orange)':'var(--orange)'}}>
+                  {paid?'Paid':part?`${inv.paid_count}/${inv.recipient_count}`:'Unpaid'}
+                </span>
+              </div>
+            </div>
+            {isBulk&&<div style={{fontSize:11,color:'var(--text2)',marginTop:6}}>👥 {inv.recipient_count} recipients</div>}
+          </div>;
+        })}
+        {!invoices.length&&<div style={{textAlign:'center',padding:'40px 0',color:'var(--text2)'}}>No invoices raised yet</div>}
+      </>}
+
+      {/* ── Documents ── */}
+      {tab==='docs' && <>
+        <div style={{marginBottom:12,fontSize:13,color:'var(--text2)'}}>{docs.length} pending document{docs.length!==1?'s':''}</div>
+        {docs.map(d=><div key={d.id} style={{background:'var(--card2)',borderRadius:12,padding:'12px 14px',marginBottom:8,border:'1px solid var(--border)'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <div>
+              <div style={{fontWeight:600,fontSize:13}}>{d.name}</div>
+              <div style={{fontSize:12,color:'var(--text2)',marginTop:2}}>{d.doc_type?.replace(/_/g,' ')} · {d.unit_number}</div>
+            </div>
+            <button onClick={()=>approve('doc',d.id)} disabled={submitting===d.id}
+              style={{padding:'7px 12px',borderRadius:9,background:'rgba(0,184,148,.15)',border:'1px solid rgba(0,184,148,.3)',color:'var(--green)',fontWeight:700,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>
+              ✓ Verify
+            </button>
+          </div>
+        </div>)}
+        {!docs.length&&<div style={{textAlign:'center',padding:'40px 0',color:'var(--text2)'}}>No pending documents</div>}
+      </>}
+    </div>
+
+    {/* Reject modal */}
+    {rejectTarget&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.75)',display:'flex',alignItems:'flex-end',zIndex:500}}>
+      <div style={{background:'var(--card)',borderRadius:'20px 20px 0 0',padding:'24px 20px 40px',width:'100%'}}>
+        <h3 style={{marginBottom:4}}>Reject Application</h3>
+        <p style={{fontSize:13,color:'var(--text2)',marginBottom:14}}>This reason will be shown to <strong>{rejectTarget.name}</strong>.</p>
+        <textarea className="input" rows={3} value={rejectReason} onChange={e=>setRejectReason(e.target.value)}
+          placeholder="e.g. Documents incomplete — please resubmit."
+          style={{width:'100%',resize:'none',marginBottom:10}}/>
+        {rejectErr&&<p style={{color:'var(--red)',fontSize:13,marginBottom:10}}>{rejectErr}</p>}
+        <div style={{display:'flex',gap:10}}>
+          <button onClick={submitReject}
+            style={{flex:1,padding:13,borderRadius:12,background:'var(--red)',border:'none',color:'white',fontWeight:700,fontSize:14,cursor:'pointer',fontFamily:'inherit'}}>
+            Confirm Reject
+          </button>
+          <button onClick={()=>setRejectTarget(null)}
+            style={{flex:1,padding:13,borderRadius:12,background:'var(--card2)',border:'1px solid var(--border)',color:'var(--text)',fontWeight:600,fontSize:14,cursor:'pointer',fontFamily:'inherit'}}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>}
+
+    {/* Raise Invoice modal */}
+    {raiseModal&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.75)',display:'flex',alignItems:'flex-end',zIndex:500}}>
+      <div style={{background:'var(--card)',borderRadius:'20px 20px 0 0',padding:'24px 20px 40px',width:'100%',maxHeight:'90vh',overflowY:'auto'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20}}>
+          <h3 style={{margin:0}}>Raise Invoice</h3>
+          <button onClick={()=>setRaiseModal(false)} style={{background:'none',border:'none',color:'var(--text2)',fontSize:24,cursor:'pointer',lineHeight:1,padding:0}}>×</button>
+        </div>
+        <div style={{display:'flex',flexDirection:'column',gap:12}}>
+          <div className="form-group">
+            <label className="label">Category</label>
+            <select className="input" value={invoiceForm.invoiceType} onChange={e=>setInvoiceForm(f=>({...f,invoiceType:e.target.value}))}>
+              {Object.entries(TYPE_ICONS).map(([t,icon])=><option key={t} value={t}>{icon} {t.charAt(0).toUpperCase()+t.slice(1)}</option>)}
+            </select>
+          </div>
+          <div className="form-group">
+            <label className="label">Title *</label>
+            <input className="input" placeholder="e.g. Monthly Maintenance – March 2026" value={invoiceForm.title} onChange={e=>setInvoiceForm(f=>({...f,title:e.target.value}))}/>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+            <div className="form-group">
+              <label className="label">Amount (₹) *</label>
+              <input className="input" type="number" placeholder="2500" value={invoiceForm.amount} onChange={e=>setInvoiceForm(f=>({...f,amount:e.target.value}))}/>
+            </div>
+            <div className="form-group">
+              <label className="label">Due Date</label>
+              <input className="input" type="date" value={invoiceForm.dueDate} onChange={e=>setInvoiceForm(f=>({...f,dueDate:e.target.value}))}/>
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="label">Send To</label>
+            <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:4}}>
+              {[['all','All Residents'],['type','By Type']].map(([v,l])=>(
+                <button key={v} onClick={()=>setInvoiceForm(f=>({...f,target:v,residentTypes:[]}))}
+                  style={{padding:'7px 14px',borderRadius:20,border:`2px solid ${invoiceForm.target===v?'var(--accent)':'var(--border)'}`,
+                    background:invoiceForm.target===v?'rgba(108,92,231,.15)':'transparent',
+                    color:invoiceForm.target===v?'var(--accent)':'var(--text2)',fontFamily:'inherit',fontWeight:600,fontSize:13,cursor:'pointer'}}>
+                  {l}
+                </button>
+              ))}
+            </div>
+            {invoiceForm.target==='type'&&<div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:10}}>
+              {RES_TYPES.map(t=>{const sel=invoiceForm.residentTypes.includes(t);return(
+                <button key={t} onClick={()=>toggleResType(t)}
+                  style={{padding:'6px 12px',borderRadius:20,border:`1px solid ${sel?'var(--accent)':'var(--border)'}`,
+                    background:sel?'rgba(108,92,231,.15)':'transparent',
+                    color:sel?'var(--accent)':'var(--text2)',fontFamily:'inherit',fontSize:12,cursor:'pointer'}}>
+                  {t.replace(/_/g,' ')}
+                </button>
+              );})}
+            </div>}
+            {invPreview!==null&&<div style={{marginTop:10,padding:'8px 12px',background:'rgba(108,92,231,.08)',borderRadius:9,fontSize:12,
+                color:invPreview.length?'var(--accent)':'var(--red)',fontWeight:600}}>
+              {invPreview.length?`✓ Will send to ${invPreview.length} resident${invPreview.length!==1?'s':''}`:'⚠ No eligible residents'}
+            </div>}
+          </div>
+        </div>
+        <button onClick={raiseInvoice} disabled={submitting==='inv'}
+          style={{width:'100%',marginTop:20,padding:14,borderRadius:14,background:'var(--accent)',border:'none',color:'white',fontWeight:700,fontSize:15,cursor:'pointer',fontFamily:'inherit'}}>
+          {submitting==='inv'?'Sending…':'Raise Invoice'}
+        </button>
+      </div>
+    </div>}
+  </div>;
+}
+
 function LoginPage({onLogin, onSignup}) {
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState('');
@@ -870,21 +1242,40 @@ const TileIllustrations = {
     <circle cx="118" cy="90" r="2" fill="white" opacity="0.2"/>
     <circle cx="105" cy="100" r="4" fill="white" opacity="0.2"/>
   </svg>,
+  admin: <svg viewBox="0 0 160 160" fill="none" xmlns="http://www.w3.org/2000/svg" className="illustration">
+    <ellipse cx="80" cy="135" rx="48" ry="7" fill="rgba(0,0,0,0.15)"/>
+    {/* shield */}
+    <path d="M80 28 L110 42 L110 80 Q110 108 80 122 Q50 108 50 80 L50 42 Z" stroke="white" strokeWidth="2.5" fill="rgba(255,255,255,0.12)" strokeLinejoin="round" opacity="0.9"/>
+    {/* checkmark inside shield */}
+    <path d="M67 78 L76 87 L95 66" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" opacity="0.95"/>
+    {/* floating cards */}
+    <rect x="30" y="50" width="24" height="16" rx="4" fill="rgba(255,255,255,0.15)" stroke="white" strokeWidth="1.5" opacity="0.6"/>
+    <line x1="34" y1="55" x2="50" y2="55" stroke="white" strokeWidth="1.5" opacity="0.5"/>
+    <line x1="34" y1="60" x2="46" y2="60" stroke="white" strokeWidth="1" opacity="0.35"/>
+    <rect x="106" y="62" width="24" height="16" rx="4" fill="rgba(255,255,255,0.15)" stroke="white" strokeWidth="1.5" opacity="0.6"/>
+    <line x1="110" y1="67" x2="126" y2="67" stroke="white" strokeWidth="1.5" opacity="0.5"/>
+    <line x1="110" y1="72" x2="122" y2="72" stroke="white" strokeWidth="1" opacity="0.35"/>
+  </svg>,
 };
 
 function HomePage({ctx, setPage}) {
   const [approvals, setApprovals] = useState({entries:[],deliveries:[]});
   const [banners, setBanners]     = useState([]);
   const [ads, setAds]             = useState([]);
+  const [adminStats, setAdminStats] = useState(null);
   const [bannerIdx, setBannerIdx] = useState(0);
   const firstName = ctx?.user?.name?.split(' ')[0] || 'Resident';
   const aptLabel = ctx?.apartment ? `${ctx.apartment.unit_number}, ${ctx?.society?.name||''}, India` : 'No apartment set';
+
+  // Detect if this user is admin/super_admin of the active society
+  const isAdmin = (ctx?.roles||[]).some(r => r.society_id === ctx?.activeSociety && (r.role === 'admin' || r.role === 'super_admin'));
 
   useEffect(()=>{
     api('/api/visitors/pending-approvals').then(setApprovals);
     api('/api/home/banners').then(b=>{ if(Array.isArray(b)) setBanners(b); });
     api('/api/home/ads').then(a=>{ if(Array.isArray(a)) setAds(a); });
-  },[]);
+    if(isAdmin) api('/api/admin/dashboard').then(d=>{ if(!d.error) setAdminStats(d); });
+  },[isAdmin]);
 
   // Auto-rotate banners every 5s
   useEffect(()=>{
@@ -895,6 +1286,10 @@ function HomePage({ctx, setPage}) {
 
   const pendingCount = (approvals.entries||[]).length + (approvals.deliveries||[]).length;
 
+  const adminPending = adminStats
+    ? (adminStats.pendingApprovals||0) + (adminStats.pendingMoves||0) + (adminStats.pendingDocuments||0) + (adminStats.pendingLeases||0)
+    : 0;
+
   const tiles = [
     { key:'gate',    label:'Gate',          color:'#9B7B6A', page:'visitors',    illustration: TileIllustrations.gate },
     { key:'booking', label:'Space Booking', color:'#6B7FA3', page:'bookings',    illustration: TileIllustrations.booking },
@@ -902,6 +1297,7 @@ function HomePage({ctx, setPage}) {
     { key:'market',  label:'Marketplace',   color:'#8A9E8A', page:'marketplace', illustration: TileIllustrations.marketplace },
     { key:'news',    label:'Society News',  color:'#B06B5A', page:'news',        illustration: TileIllustrations.news },
     { key:'profile', label:'My Profile',    color:'#6A7D9B', page:'profile',     illustration: TileIllustrations.booking },
+    ...(isAdmin ? [{ key:'admin', label:'Admin Panel', color:'#3d2b6e', page:'admin', illustration: TileIllustrations.admin }] : []),
   ];
 
   const ad = ads[0]; // show first active ad
@@ -966,6 +1362,8 @@ function HomePage({ctx, setPage}) {
           <div className="tile-label">{t.label}</div>
           {t.key==='gate' && pendingCount>0 &&
             <div className="tile-pending">{pendingCount} pending</div>}
+          {t.key==='admin' && adminPending>0 &&
+            <div className="tile-pending" style={{background:'rgba(225,112,85,0.85)'}}>{adminPending} pending</div>}
         </div>
       ))}
 
