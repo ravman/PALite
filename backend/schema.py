@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS towers (id TEXT PRIMARY KEY, society_id TEXT NOT NULL
 CREATE TABLE IF NOT EXISTS apartments (id TEXT PRIMARY KEY, tower_id TEXT NOT NULL, unit_number TEXT NOT NULL, floor INTEGER, bedrooms INTEGER DEFAULT 2, area_sqft REAL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, phone TEXT UNIQUE NOT NULL, name TEXT, email TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS user_society_roles (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, society_id TEXT NOT NULL, role TEXT NOT NULL, guard_pin TEXT, guard_name TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, society_id, role));
-CREATE TABLE IF NOT EXISTS residents (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, apartment_id TEXT NOT NULL, society_id TEXT NOT NULL, resident_type TEXT NOT NULL, status TEXT DEFAULT 'pending', invited_by TEXT, lease_start DATE, lease_end DATE, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, apartment_id));
+CREATE TABLE IF NOT EXISTS residents (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, apartment_id TEXT NOT NULL, society_id TEXT NOT NULL, resident_type TEXT NOT NULL, status TEXT DEFAULT 'pending', invited_by TEXT, lease_start DATE, lease_end DATE, rejection_reason TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, apartment_id));
 CREATE TABLE IF NOT EXISTS otp_sessions (id TEXT PRIMARY KEY, phone TEXT NOT NULL, otp TEXT NOT NULL, verified INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS documents (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, resident_id TEXT, society_id TEXT NOT NULL, doc_type TEXT NOT NULL, file_name TEXT, file_data TEXT, status TEXT DEFAULT 'pending', created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS document_requirements (id TEXT PRIMARY KEY, society_id TEXT NOT NULL, resident_type TEXT NOT NULL, doc_type TEXT NOT NULL, is_mandatory INTEGER DEFAULT 1, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
@@ -39,6 +39,11 @@ def init_db():
         conn.execute("ALTER TABLE user_society_roles ADD COLUMN guard_pin TEXT")
     if 'guard_name' not in cols:
         conn.execute("ALTER TABLE user_society_roles ADD COLUMN guard_name TEXT")
+    # residents migration
+    cur2 = conn.execute("PRAGMA table_info(residents)")
+    res_cols = [r[1] for r in cur2.fetchall()]
+    if 'rejection_reason' not in res_cols:
+        conn.execute("ALTER TABLE residents ADD COLUMN rejection_reason TEXT")
     conn.commit(); conn.close()
 def get_conn():
     conn = sqlite3.connect(DB_PATH); conn.row_factory = sqlite3.Row; conn.execute('PRAGMA foreign_keys = ON'); return conn

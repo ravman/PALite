@@ -295,7 +295,8 @@ function App() {
   const [page, setPage] = useState('home');
   const [loading, setLoading] = useState(true);
   const [voiceOpen, setVoiceOpen] = useState(false);
-  const [voiceAction, setVoiceAction] = useState(null); // {page, prefill:{}} from voice
+  const [voiceAction, setVoiceAction] = useState(null);
+  const [signupState, setSignupState] = useState(null); // {sid, phone, token, user} for new users
 
   const loadMe = useCallback(()=>{
     if(!token) {setLoading(false); return;}
@@ -309,11 +310,42 @@ function App() {
   useEffect(()=>{loadMe();},[loadMe]);
 
   const handleLogin = (t,u)=>{localStorage.setItem('gk_token',t);setToken(t);setUser(u);setLoading(true);setTimeout(loadMe,100);};
-  const handleLogout = ()=>{localStorage.removeItem('gk_token');setToken(null);setUser(null);setCtx(null);setPage('home');};
+  const handleLogout = ()=>{localStorage.removeItem('gk_token');setToken(null);setUser(null);setCtx(null);setPage('home');setSignupState(null);};
+
+  // New user — show signup before storing token
+  const handleSignup = (sid, phone, token, user) => {
+    setSignupState({sid, phone, token, user});
+  };
+  const handleSignupDone = (result) => {
+    // Store token now, reload context → will land on pending screen
+    localStorage.setItem('gk_token', signupState.token);
+    setToken(signupState.token);
+    setSignupState(null);
+    setLoading(true);
+    setTimeout(loadMe, 200);
+  };
+
   const switchApt = (aptId)=>{api('/api/context/switch',{method:'POST',body:JSON.stringify({apartmentId:aptId})}).then(()=>loadMe());};
 
   if(loading) return <div className="login"><h1>PA Lite</h1><p>Loading...</p></div>;
-  if(!token) return <LoginPage onLogin={handleLogin}/>;
+
+  // New user completing signup
+  if(signupState) return <SignupPage
+    sessionId={signupState.sid}
+    phone={signupState.phone}
+    onDone={handleSignupDone}/>;
+
+  if(!token) return <LoginPage onLogin={handleLogin} onSignup={handleSignup}/>;
+
+  // Check resident status — pending or rejected users get a gate screen
+  const resident = ctx?.resident;
+  if(resident && (resident.status==='pending' || resident.status==='rejected')) {
+    return <PendingScreen
+      resident={resident}
+      user={user}
+      onLogout={handleLogout}
+      onRefresh={loadMe}/>;
+  }
 
   const pages = {home:<HomePage ctx={ctx} setPage={setPage}/>,profile:<ProfilePage ctx={ctx} user={user} onLogout={handleLogout} switchApt={switchApt} reload={loadMe} setPage={setPage}/>,bookings:<BookingsPage setPage={setPage} prefill={voiceAction?.page==='bookings'?voiceAction.prefill:null}/>,visitors:<VisitorsPage ctx={ctx} setPage={setPage} prefill={voiceAction?.page==='visitors'?voiceAction.prefill:null}/>,marketplace:<MarketplacePage setPage={setPage} prefill={voiceAction?.page==='marketplace'?voiceAction.prefill:null}/>,locks:<LocksPage setPage={setPage}/>,news:<NewsPage setPage={setPage}/>};
 
@@ -342,38 +374,319 @@ function App() {
   </div>;
 }
 
-function LoginPage({onLogin}) {
+// ─── Resident type config ────────────────────────────────────────────────────
+const RESIDENT_TYPES = [
+  { value:'owner',          label:'Owner',          desc:'Primary property owner',            icon:'🏠' },
+  { value:'owner_family',   label:'Owner\'s Family', desc:'Family member of the owner',        icon:'👨‍👩‍👧' },
+  { value:'tenant',         label:'Tenant',          desc:'Renting the apartment',             icon:'🔑' },
+  { value:'tenant_family',  label:'Tenant\'s Family',desc:'Family member of a tenant',        icon:'👪' },
+];
+
+// ─── Pending / Rejected gate screen ─────────────────────────────────────────
+function PendingScreen({resident, user, onLogout, onRefresh}) {
+  const isRejected = resident?.status === 'rejected';
+
+  useEffect(()=>{
+    if(isRejected) return; // don't poll if rejected
+    const t = setInterval(onRefresh, 10000); // poll every 10s while pending
+    return ()=>clearInterval(t);
+  },[isRejected]);
+
+  return <div style={{minHeight:'100vh',background:'var(--bg)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:24,textAlign:'center'}}>
+    <div style={{fontSize:64,marginBottom:16}}>{isRejected?'❌':'⏳'}</div>
+    <h2 style={{fontSize:22,fontWeight:700,color:'var(--text)',marginBottom:8}}>
+      {isRejected ? 'Application Not Approved' : 'Awaiting Approval'}
+    </h2>
+    {isRejected ? <>
+      <div style={{background:'rgba(248,81,73,.1)',border:'1px solid rgba(248,81,73,.3)',borderRadius:14,padding:20,marginBottom:20,maxWidth:360,width:'100%'}}>
+        <p style={{fontSize:13,color:'var(--text2)',marginBottom:6,fontWeight:600}}>Reason from admin:</p>
+        <p style={{fontSize:14,color:'#f85149',lineHeight:1.6,margin:0}}>{resident.rejection_reason}</p>
+      </div>
+      <p style={{fontSize:13,color:'var(--text2)',maxWidth:300,lineHeight:1.6,marginBottom:24}}>
+        Please log out and sign up again with the correct information and documents.
+      </p>
+      <button onClick={onLogout} style={{background:'var(--red)',border:'none',borderRadius:12,padding:'12px 32px',color:'white',fontWeight:700,fontSize:15,cursor:'pointer',fontFamily:'inherit'}}>
+        Logout &amp; Try Again
+      </button>
+    </> : <>
+      <p style={{fontSize:14,color:'var(--text2)',maxWidth:320,lineHeight:1.7,marginBottom:8}}>
+        Your application is being reviewed by the society admin.<br/>
+        You'll be notified once approved.
+      </p>
+      <div style={{margin:'20px 0',display:'flex',flexDirection:'column',gap:10,textAlign:'left',maxWidth:340,width:'100%'}}>
+        <div style={{background:'var(--card)',borderRadius:14,padding:16,border:'1px solid var(--border)'}}>
+          <p style={{fontSize:12,color:'var(--text2)',marginBottom:4}}>Society</p>
+          <p style={{fontSize:14,color:'var(--text)',fontWeight:600,margin:0}}>{resident?.society_name||'—'}</p>
+        </div>
+        <div style={{background:'var(--card)',borderRadius:14,padding:16,border:'1px solid var(--border)'}}>
+          <p style={{fontSize:12,color:'var(--text2)',marginBottom:4}}>Apartment</p>
+          <p style={{fontSize:14,color:'var(--text)',fontWeight:600,margin:0}}>{resident?.unit_number||'—'} · {resident?.tower_name||'—'}</p>
+        </div>
+        <div style={{background:'var(--card)',borderRadius:14,padding:16,border:'1px solid var(--border)'}}>
+          <p style={{fontSize:12,color:'var(--text2)',marginBottom:4}}>Resident Type</p>
+          <p style={{fontSize:14,color:'var(--text)',fontWeight:600,margin:0,textTransform:'capitalize'}}>{(resident?.resident_type||'').replace(/_/g,' ')}</p>
+        </div>
+      </div>
+      <p style={{fontSize:11,color:'var(--text2)',marginBottom:20}}>Checking for updates automatically...</p>
+      <button onClick={onLogout} style={{background:'none',border:'1px solid var(--border)',borderRadius:10,padding:'9px 22px',color:'var(--text2)',fontSize:13,cursor:'pointer',fontFamily:'inherit'}}>
+        Logout
+      </button>
+    </>}
+    {/* While pending, show news */}
+    {!isRejected && <div style={{marginTop:32,width:'100%',maxWidth:420}}>
+      <p style={{fontSize:12,color:'var(--text2)',marginBottom:12,textAlign:'left'}}>📰 Society News (available during review)</p>
+      <NewsPreview/>
+    </div>}
+  </div>;
+}
+
+function NewsPreview() {
+  const [news,setNews]=useState([]);
+  useEffect(()=>{ api('/api/news').then(d=>setNews(Array.isArray(d)?d.slice(0,3):[])); },[]);
+  if(!news.length) return null;
+  return <div style={{display:'flex',flexDirection:'column',gap:10}}>
+    {news.map(n=><div key={n.id} style={{background:'var(--card)',borderRadius:14,padding:16,border:'1px solid var(--border)',textAlign:'left'}}>
+      {n.is_pinned&&<span style={{fontSize:10,color:'var(--accent)',fontWeight:700,display:'block',marginBottom:4}}>📌 PINNED</span>}
+      <p style={{fontSize:14,fontWeight:700,color:'var(--text)',margin:'0 0 4px'}}>{n.title}</p>
+      {n.body&&<p style={{fontSize:12,color:'var(--text2)',margin:0,lineHeight:1.5}}>{n.body.slice(0,120)}{n.body.length>120?'…':''}</p>}
+    </div>)}
+  </div>;
+}
+
+// ─── Signup flow ─────────────────────────────────────────────────────────────
+function SignupPage({sessionId, phone, onDone}) {
+  const [step, setStep]         = useState('identity');   // identity → location → docs → submitting
+  const [name, setName]         = useState('');
+  const [email, setEmail]       = useState('');
+  const [societies, setSocieties] = useState([]);
+  const [towers, setTowers]     = useState([]);
+  const [apartments, setApts]   = useState([]);
+  const [societyId, setSocId]   = useState('');
+  const [towerId, setTowerId]   = useState('');
+  const [apartmentId, setAptId] = useState('');
+  const [residentType, setType] = useState('');
+  const [docReqs, setDocReqs]   = useState([]);
+  const [docs, setDocs]         = useState({});   // {docType: {fileName, data (base64)}}
+  const [err, setErr]           = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(()=>{ fetch('/api/lookup/societies').then(r=>r.json()).then(setSocieties); },[]);
+  useEffect(()=>{
+    if(!societyId){setTowers([]);setApts([]);setTowerId('');setAptId('');return;}
+    fetch(`/api/lookup/towers?societyId=${societyId}`).then(r=>r.json()).then(setTowers);
+  },[societyId]);
+  useEffect(()=>{
+    if(!towerId){setApts([]);setAptId('');return;}
+    fetch(`/api/lookup/apartments?towerId=${towerId}`).then(r=>r.json()).then(setApts);
+  },[towerId]);
+  useEffect(()=>{
+    if(!societyId||!residentType) return;
+    fetch(`/api/public/doc-requirements?societyId=${societyId}&residentType=${residentType}`)
+      .then(r=>r.json()).then(setDocReqs);
+  },[societyId,residentType]);
+
+  const goToLocation = ()=>{
+    if(!name.trim()) return setErr('Full name is required');
+    setErr(''); setStep('location');
+  };
+  const goToDocs = ()=>{
+    if(!societyId) return setErr('Select a society');
+    if(!towerId)   return setErr('Select a tower');
+    if(!apartmentId) return setErr('Select your apartment');
+    if(!residentType) return setErr('Select your resident type');
+    setErr(''); setStep('docs');
+  };
+  const handleFile = (docType, file)=>{
+    const reader = new FileReader();
+    reader.onload = e=>setDocs(d=>({...d,[docType]:{fileName:file.name,data:e.target.result}}));
+    reader.readAsDataURL(file);
+  };
+  const submit = async ()=>{
+    const missing = docReqs.filter(r=>r.is_mandatory && !docs[r.doc_type]);
+    if(missing.length) return setErr(`Please upload: ${missing.map(r=>r.doc_type.replace(/_/g,' ')).join(', ')}`);
+    setSubmitting(true); setErr('');
+    const payload = {
+      token: sessionId, name, email, apartmentId, residentType,
+      documents: Object.entries(docs).map(([type,[,{fileName,data}]]=>[type,docs[type]])
+        .map ? Object.entries(docs).map(([type,v])=>({type,fileName:v.fileName,data:v.data})) : []
+    };
+    // cleaner:
+    const docList = Object.entries(docs).map(([type,v])=>({type,fileName:v.fileName,data:v.data}));
+    const res = await fetch('/api/auth/signup',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({token:sessionId,name,email,apartmentId,residentType,documents:docList})}).then(r=>r.json());
+    setSubmitting(false);
+    if(res.error) return setErr(res.error);
+    onDone(res);
+  };
+
+  const typeObj = RESIDENT_TYPES.find(t=>t.value===residentType);
+
+  // Step: Identity
+  if(step==='identity') return <div className="login" style={{gap:0}}>
+    <div style={{marginBottom:24,textAlign:'center'}}>
+      <h1 style={{marginBottom:4}}>PA Lite</h1>
+      <p style={{color:'var(--text2)'}}>Let's set up your account</p>
+    </div>
+    <div style={{width:'100%',maxWidth:380,display:'flex',flexDirection:'column',gap:14}}>
+      <div style={{padding:'10px 16px',background:'rgba(108,92,231,.12)',borderRadius:12,fontSize:13,color:'var(--accent)'}}>
+        📱 Verified: <strong>{phone}</strong>
+      </div>
+      <div className="form-group"><label className="label">Full Name *</label>
+        <input className="input" value={name} onChange={e=>setName(e.target.value)} placeholder="Your full name" autoFocus/></div>
+      <div className="form-group"><label className="label">Email (optional)</label>
+        <input className="input" type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="your@email.com"/></div>
+      {err&&<p style={{color:'var(--red)',fontSize:13,margin:0}}>{err}</p>}
+      <button className="btn btn-primary" style={{width:'100%',padding:14}} onClick={goToLocation}>Continue →</button>
+    </div>
+    <div style={{marginTop:16,display:'flex',alignItems:'center',gap:8}}>
+      <div style={{height:4,width:40,borderRadius:2,background:'var(--accent)'}}/>
+      <div style={{height:4,width:40,borderRadius:2,background:'var(--border)'}}/>
+      <div style={{height:4,width:40,borderRadius:2,background:'var(--border)'}}/>
+    </div>
+  </div>;
+
+  // Step: Location + resident type
+  if(step==='location') return <div className="login" style={{gap:0,justifyContent:'flex-start',paddingTop:32}}>
+    <div style={{width:'100%',maxWidth:380}}>
+      <button onClick={()=>{setErr('');setStep('identity');}} style={{background:'none',border:'none',color:'var(--text2)',cursor:'pointer',fontSize:13,fontFamily:'inherit',marginBottom:16,padding:0}}>← Back</button>
+      <h2 style={{marginBottom:4}}>Your Home</h2>
+      <p style={{color:'var(--text2)',fontSize:13,marginBottom:20}}>Tell us which apartment you live in</p>
+      <div style={{display:'flex',flexDirection:'column',gap:14}}>
+        <div className="form-group"><label className="label">Society *</label>
+          <select className="input" value={societyId} onChange={e=>setSocId(e.target.value)} style={{cursor:'pointer'}}>
+            <option value="">Select society...</option>
+            {societies.map(s=><option key={s.id} value={s.id}>{s.name}{s.city?` · ${s.city}`:''}</option>)}
+          </select></div>
+        <div className="form-group"><label className="label">Tower / Block *</label>
+          <select className="input" value={towerId} onChange={e=>setTowerId(e.target.value)} disabled={!societyId} style={{cursor:'pointer'}}>
+            <option value="">Select tower...</option>
+            {towers.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}
+          </select></div>
+        <div className="form-group"><label className="label">Apartment *</label>
+          <select className="input" value={apartmentId} onChange={e=>setAptId(e.target.value)} disabled={!towerId} style={{cursor:'pointer'}}>
+            <option value="">Select apartment...</option>
+            {apartments.map(a=><option key={a.id} value={a.id}>{a.unit_number}{a.floor?` · Floor ${a.floor}`:''}</option>)}
+          </select></div>
+        <div className="form-group"><label className="label">I am a... *</label>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:4}}>
+            {RESIDENT_TYPES.map(t=><button key={t.value} onClick={()=>setType(t.value)}
+              style={{padding:'10px 8px',borderRadius:12,border:`2px solid ${residentType===t.value?'var(--accent)':'var(--border)'}`,background:residentType===t.value?'rgba(108,92,231,.15)':'var(--card)',cursor:'pointer',textAlign:'left',fontFamily:'inherit'}}>
+              <div style={{fontSize:20,marginBottom:4}}>{t.icon}</div>
+              <div style={{fontSize:13,fontWeight:700,color:'var(--text)'}}>{t.label}</div>
+              <div style={{fontSize:11,color:'var(--text2)',lineHeight:1.3}}>{t.desc}</div>
+            </button>)}
+          </div></div>
+        {err&&<p style={{color:'var(--red)',fontSize:13,margin:0}}>{err}</p>}
+        <button className="btn btn-primary" style={{width:'100%',padding:14}} onClick={goToDocs}>Continue →</button>
+      </div>
+      <div style={{marginTop:16,display:'flex',alignItems:'center',gap:8,justifyContent:'center'}}>
+        <div style={{height:4,width:40,borderRadius:2,background:'var(--border)'}}/>
+        <div style={{height:4,width:40,borderRadius:2,background:'var(--accent)'}}/>
+        <div style={{height:4,width:40,borderRadius:2,background:'var(--border)'}}/>
+      </div>
+    </div>
+  </div>;
+
+  // Step: Documents
+  if(step==='docs') return <div className="login" style={{gap:0,justifyContent:'flex-start',paddingTop:32}}>
+    <div style={{width:'100%',maxWidth:380}}>
+      <button onClick={()=>{setErr('');setStep('location');}} style={{background:'none',border:'none',color:'var(--text2)',cursor:'pointer',fontSize:13,fontFamily:'inherit',marginBottom:16,padding:0}}>← Back</button>
+      <h2 style={{marginBottom:4}}>Required Documents</h2>
+      <p style={{color:'var(--text2)',fontSize:13,marginBottom:6}}>
+        {typeObj?.icon} {typeObj?.label} — please upload the following
+      </p>
+      {!docReqs.length
+        ? <div style={{padding:'20px 0',color:'var(--text2)',fontSize:13}}>No documents required for your society. You can proceed.</div>
+        : <div style={{display:'flex',flexDirection:'column',gap:12,marginTop:16}}>
+          {docReqs.map(req=>{
+            const uploaded = docs[req.doc_type];
+            const label = req.doc_type.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+            return <div key={req.doc_type} style={{background:'var(--card)',borderRadius:14,padding:16,border:`1px solid ${uploaded?'var(--accent)':'var(--border)'}`}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
+                <div>
+                  <span style={{fontSize:13,fontWeight:700,color:'var(--text)'}}>{label}</span>
+                  {req.is_mandatory&&<span style={{fontSize:10,color:'var(--red)',marginLeft:6,fontWeight:700}}>REQUIRED</span>}
+                </div>
+                {uploaded&&<span style={{fontSize:11,color:'var(--accent)',fontWeight:600}}>✓ Uploaded</span>}
+              </div>
+              {uploaded
+                ? <div style={{fontSize:11,color:'var(--text2)',wordBreak:'break-all'}}>{uploaded.fileName}</div>
+                : null}
+              <label style={{display:'block',marginTop:8}}>
+                <div style={{padding:'8px 14px',borderRadius:9,border:'1px solid var(--border)',fontSize:12,color:'var(--text2)',cursor:'pointer',textAlign:'center',background:'var(--card2)'}}>
+                  {uploaded?'Replace file':'📎 Upload PDF / Image'}
+                </div>
+                <input type="file" accept="image/*,.pdf" style={{display:'none'}} onChange={e=>e.target.files[0]&&handleFile(req.doc_type,e.target.files[0])}/>
+              </label>
+            </div>;
+          })}
+        </div>}
+      {err&&<p style={{color:'var(--red)',fontSize:13,margin:'12px 0 0'}}>{err}</p>}
+      <button className="btn btn-primary" style={{width:'100%',padding:14,marginTop:20}} onClick={submit} disabled={submitting}>
+        {submitting?'Submitting...' : 'Submit Application →'}
+      </button>
+      <div style={{marginTop:16,display:'flex',alignItems:'center',gap:8,justifyContent:'center'}}>
+        <div style={{height:4,width:40,borderRadius:2,background:'var(--border)'}}/>
+        <div style={{height:4,width:40,borderRadius:2,background:'var(--border)'}}/>
+        <div style={{height:4,width:40,borderRadius:2,background:'var(--accent)'}}/>
+      </div>
+    </div>
+  </div>;
+
+  return null;
+}
+
+function LoginPage({onLogin, onSignup}) {
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState('');
   const [sid, setSid] = useState('');
   const [step, setStep] = useState('phone');
   const [err, setErr] = useState('');
+  const [isNew, setIsNew] = useState(false);
 
   const sendOtp = ()=>{
+    if(!phone) return setErr('Enter your phone number');
+    setErr('');
     api('/api/auth/request-otp',{method:'POST',body:JSON.stringify({phone})})
-    .then(d=>{if(d.success){setSid(d.sessionId);setStep('otp');}else setErr(d.error);});
+    .then(d=>{if(d.success){setSid(d.sessionId);setStep('otp');}else setErr(d.error||'Failed');});
   };
   const verify = ()=>{
+    if(!otp) return setErr('Enter the OTP');
+    setErr('');
     api('/api/auth/verify-otp',{method:'POST',body:JSON.stringify({sessionId:sid,otp})})
-    .then(d=>{if(d.token){onLogin(d.token,d.user);}else setErr(d.error);});
+    .then(d=>{
+      if(!d.token) return setErr(d.error||'Invalid OTP');
+      if(d.isNew) { onSignup(sid, phone, d.token, d.user); }
+      else { onLogin(d.token, d.user); }
+    });
   };
 
   return <div className="login">
     <h1>PA Lite</h1>
-    <p>Smart Community Living</p>
-    <div className="form">
+    <p style={{color:'var(--text2)',marginBottom:24}}>Smart Community Living</p>
+    <div style={{width:'100%',maxWidth:360,display:'flex',flexDirection:'column',gap:14}}>
       {step==='phone' ? <>
         <div className="form-group"><label className="label">Phone Number</label>
-        <input className="input" placeholder="Enter phone number" value={phone} onChange={e=>setPhone(e.target.value)}/></div>
-        <button className="btn btn-primary" style={{width:'100%'}} onClick={sendOtp}>Send OTP</button>
-        <p style={{marginTop:12,fontSize:12,color:'var(--text2)'}}>Demo: 9876543210 (Resident) | 9999900001 (Admin) | 9999900002 (Guard)</p>
+          <input className="input" placeholder="Enter phone number" value={phone}
+            onChange={e=>setPhone(e.target.value)} onKeyDown={e=>e.key==='Enter'&&sendOtp()}/></div>
+        <button className="btn btn-primary" style={{width:'100%',padding:14}} onClick={sendOtp}>Send OTP</button>
+        <p style={{fontSize:11,color:'var(--text2)',textAlign:'center',margin:0}}>Demo: 9876543210</p>
       </> : <>
+        <div style={{padding:'10px 16px',background:'rgba(108,92,231,.12)',borderRadius:12,fontSize:13,color:'var(--accent)'}}>
+          OTP sent to {phone}
+        </div>
         <div className="form-group"><label className="label">Enter OTP</label>
-        <input className="input" placeholder="Enter 6-digit OTP" value={otp} onChange={e=>setOtp(e.target.value)}/></div>
-        <button className="btn btn-primary" style={{width:'100%'}} onClick={verify}>Verify</button>
-        <p style={{marginTop:12,fontSize:12,color:'var(--text2)'}}>Demo OTP: 123456</p>
+          <input className="input" placeholder="123456" value={otp}
+            onChange={e=>setOtp(e.target.value)} maxLength={6}
+            onKeyDown={e=>e.key==='Enter'&&verify()}
+            style={{fontSize:24,letterSpacing:8,textAlign:'center',fontFamily:'monospace'}}/></div>
+        <button className="btn btn-primary" style={{width:'100%',padding:14}} onClick={verify}>Verify OTP</button>
+        <button onClick={()=>{setStep('phone');setOtp('');setErr('');}}
+          style={{background:'none',border:'none',color:'var(--text2)',cursor:'pointer',fontSize:13,fontFamily:'inherit'}}>
+          ← Change number
+        </button>
       </>}
-      {err && <p style={{color:'var(--red)',marginTop:12,fontSize:13}}>{err}</p>}
+      {err&&<p style={{color:'var(--red)',fontSize:13,margin:0,textAlign:'center'}}>{err}</p>}
     </div>
   </div>;
 }

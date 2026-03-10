@@ -400,6 +400,16 @@ def my_docs(): return jsonify(drs(get_db().execute('SELECT id,user_id,resident_i
 @auth_required
 def doc_reqs(): return jsonify(drs(get_db().execute('SELECT * FROM document_requirements WHERE society_id=?',(g.soc or '',)).fetchall()))
 
+@app.route('/api/public/doc-requirements')
+def public_doc_reqs():
+    """No auth needed — used during signup to show required docs before login."""
+    soc_id = request.args.get('societyId')
+    res_type = request.args.get('residentType')
+    if not soc_id or not res_type: return jsonify([])
+    return jsonify(drs(get_db().execute(
+        'SELECT * FROM document_requirements WHERE society_id=? AND resident_type=?',
+        (soc_id, res_type)).fetchall()))
+
 @app.route('/api/move-requests', methods=['POST'])
 @auth_required
 def create_move():
@@ -477,11 +487,46 @@ def admin_residents():
 
 @app.route('/api/admin/residents/<rid>/approve', methods=['POST'])
 @admin_required
-def admin_approve_res(rid): get_db().execute("UPDATE residents SET status='approved' WHERE id=? AND society_id=?",(rid,g.soc)); get_db().commit(); return jsonify({'success':True})
+def admin_approve_res(rid):
+    db = get_db()
+    res = dr(db.execute("SELECT * FROM residents WHERE id=? AND society_id=?", (rid, g.soc)).fetchone())
+    if not res: return jsonify({'error': 'Not found'}), 404
+    db.execute("UPDATE residents SET status='approved', rejection_reason=NULL WHERE id=?", (rid,))
+    db.commit()
+    from push import _get_tokens_for_user, send_push
+    tokens = _get_tokens_for_user(db, res['user_id'])
+    send_push(tokens, '✅ Residency Approved!', 'Your application has been approved. Welcome to the community!',
+              {'type': 'residency_approved', 'screen': 'Home'})
+    return jsonify({'success': True})
 
 @app.route('/api/admin/residents/<rid>/reject', methods=['POST'])
 @admin_required
-def admin_reject_res(rid): get_db().execute("UPDATE residents SET status='rejected' WHERE id=? AND society_id=?",(rid,g.soc)); get_db().commit(); return jsonify({'success':True})
+def admin_reject_res(rid):
+    d = request.json or {}
+    reason = (d.get('reason') or '').strip()
+    if not reason: return jsonify({'error': 'Rejection reason is required'}), 400
+    db = get_db()
+    res = dr(db.execute("SELECT * FROM residents WHERE id=? AND society_id=?", (rid, g.soc)).fetchone())
+    if not res: return jsonify({'error': 'Not found'}), 404
+    db.execute("UPDATE residents SET status='rejected', rejection_reason=? WHERE id=?", (reason, rid))
+    db.commit()
+    from push import _get_tokens_for_user, send_push
+    tokens = _get_tokens_for_user(db, res['user_id'])
+    send_push(tokens, '❌ Application Not Approved', f'Reason: {reason}',
+              {'type': 'residency_rejected', 'reason': reason, 'screen': 'Home'})
+    return jsonify({'success': True})
+
+@app.route('/api/residents/status')
+@auth_required
+def resident_status():
+    """For pending/rejected residents to poll their approval status."""
+    db = get_db()
+    res = dr(db.execute(
+        "SELECT r.*, a.unit_number, t.name as tower_name, s.name as society_name "
+        "FROM residents r JOIN apartments a ON r.apartment_id=a.id "
+        "JOIN towers t ON a.tower_id=t.id JOIN societies s ON r.society_id=s.id "
+        "WHERE r.user_id=? ORDER BY r.created_at DESC LIMIT 1", (g.user['id'],)).fetchone())
+    return jsonify(res or {})
 
 @app.route('/api/admin/spaces')
 @admin_required

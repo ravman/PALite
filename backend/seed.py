@@ -65,7 +65,7 @@ c.execute("INSERT INTO marketplace_posts VALUES(?,?,?,?,?,?,?,?,?,CURRENT_TIMEST
 qr1 = 'QR-' + uuid.uuid4().hex[:8].upper()
 c.execute("INSERT INTO visitor_invitations VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)", ('vinv-001',u1,'apt-A101',s1,'Rohan Gupta','9988776655','guest','Dinner',qr1,'2026-03-03T18:00','2026-03-03T23:00',0,'active'))
 
-for did,si,rt,dt in [('dreq-001',s1,'owner','property_papers'),('dreq-002',s1,'owner','government_id'),('dreq-003',s1,'tenant','rent_agreement'),('dreq-004',s1,'tenant','government_id'),('dreq-005',s1,'family_member','government_id'),('dreq-006',s2,'owner','property_papers'),('dreq-007',s2,'owner','government_id'),('dreq-008',s2,'tenant','rent_agreement'),('dreq-009',s2,'tenant','government_id')]:
+for did,si,rt,dt in [('dreq-001',s1,'owner','property_papers'),('dreq-002',s1,'owner','government_id'),('dreq-003',s1,'tenant','rent_agreement'),('dreq-004',s1,'tenant','government_id'),('dreq-005',s1,'owner_family','government_id'),('dreq-006',s1,'tenant_family','government_id'),('dreq-007',s2,'owner','property_papers'),('dreq-008',s2,'owner','government_id'),('dreq-009',s2,'tenant','rent_agreement'),('dreq-010',s2,'tenant','government_id'),('dreq-011',s2,'owner_family','government_id'),('dreq-012',s2,'tenant_family','government_id')]:
     c.execute("INSERT INTO document_requirements VALUES(?,?,?,?,?,CURRENT_TIMESTAMP)", (did,si,rt,dt,1))
 
 c.execute("INSERT INTO daily_help VALUES(?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)", ('dh-001',s1,'Lakshmi','9111122222','maid','DH-001','QR-DH-001',None,'approved'))

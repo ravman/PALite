@@ -143,21 +143,55 @@ function Dashboard() {
 
 function Residents() {
   const [res,setRes]=useState([]);const [filter,setFilter]=useState('');
+  const [rejectModal,setRejectModal]=useState(null); // {id, name}
+  const [rejectReason,setRejectReason]=useState('');
+  const [rejectErr,setRejectErr]=useState('');
   const load=()=>api('/api/admin/residents'+(filter?'?status='+filter:'')).then(setRes);
   useEffect(()=>{load();},[filter]);
+
   const approve=id=>api(`/api/admin/residents/${id}/approve`,{method:'POST'}).then(load);
-  const reject=id=>api(`/api/admin/residents/${id}/reject`,{method:'POST'}).then(load);
-  return <div><div className="top-bar"><h2>Residents</h2></div>
+  const openReject=r=>{ setRejectModal({id:r.id,name:r.name}); setRejectReason(''); setRejectErr(''); };
+  const submitReject=()=>{
+    if(!rejectReason.trim()) return setRejectErr('Please provide a reason');
+    api(`/api/admin/residents/${rejectModal.id}/reject`,{method:'POST',body:JSON.stringify({reason:rejectReason})})
+      .then(d=>{ if(d.error) return setRejectErr(d.error); setRejectModal(null); load(); });
+  };
+
+  return <div>
+    <div className="top-bar"><h2>Residents</h2></div>
     <div className="tab-bar">
       {['','pending','approved','rejected'].map(f=><button key={f} className={`tab ${filter===f?'active':''}`} onClick={()=>setFilter(f)}>{f||'All'}</button>)}
     </div>
     <div className="card"><table className="table"><thead><tr><th>Name</th><th>Phone</th><th>Apartment</th><th>Tower</th><th>Type</th><th>Status</th><th>Actions</th></tr></thead><tbody>
       {res.map(r=><tr key={r.id}><td>{r.name}</td><td>{r.phone}</td><td>{r.unit_number}</td><td>{r.tower_name}</td>
         <td><span className="badge badge-blue">{r.resident_type}</span></td>
-        <td><span className={`badge badge-${r.status==='approved'?'green':r.status==='pending'?'orange':'red'}`}>{r.status}</span></td>
-        <td>{r.status==='pending'&&<div className="flex"><button className="btn btn-sm btn-green" onClick={()=>approve(r.id)}>Approve</button><button className="btn btn-sm btn-red" onClick={()=>reject(r.id)}>Reject</button></div>}</td></tr>)}
+        <td>
+          <span className={`badge badge-${r.status==='approved'?'green':r.status==='pending'?'orange':'red'}`}>{r.status}</span>
+          {r.status==='rejected'&&r.rejection_reason&&<div style={{fontSize:11,color:'var(--text2)',marginTop:4,maxWidth:180}}>↳ {r.rejection_reason}</div>}
+        </td>
+        <td>{r.status==='pending'&&<div className="flex">
+          <button className="btn btn-sm btn-green" onClick={()=>approve(r.id)}>Approve</button>
+          <button className="btn btn-sm btn-red" onClick={()=>openReject(r)}>Reject</button>
+        </div>}</td></tr>)}
     </tbody></table>
     {!res.length&&<div className="empty">No residents found</div>}</div>
+
+    {/* Reject reason modal */}
+    {rejectModal&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000}}>
+      <div style={{background:'var(--card)',borderRadius:16,padding:28,width:420,border:'1px solid var(--border)'}}>
+        <h3 style={{marginBottom:4}}>Reject Application</h3>
+        <p style={{fontSize:13,color:'var(--text2)',marginBottom:16}}>Rejecting <strong>{rejectModal.name}</strong>. This reason will be shown to the applicant.</p>
+        <label className="label">Reason for rejection *</label>
+        <textarea className="input" rows={3} value={rejectReason} onChange={e=>setRejectReason(e.target.value)}
+          placeholder="e.g. Documents incomplete — please resubmit with valid proof of ownership."
+          style={{resize:'vertical',marginBottom:12,width:'100%'}}/>
+        {rejectErr&&<p style={{color:'var(--red)',fontSize:13,marginBottom:10}}>{rejectErr}</p>}
+        <div style={{display:'flex',gap:10}}>
+          <button className="btn btn-primary btn-sm" style={{background:'var(--red)'}} onClick={submitReject}>Confirm Reject</button>
+          <button className="btn btn-sm" style={{background:'var(--card2)',border:'1px solid var(--border)',color:'var(--text)'}} onClick={()=>setRejectModal(null)}>Cancel</button>
+        </div>
+      </div>
+    </div>}
   </div>;
 }
 
@@ -256,7 +290,7 @@ function DocReqs() {
         <td><button className="btn btn-sm btn-red" onClick={()=>del(r.id)}>Remove</button></td></tr>)}
     </tbody></table></div>
     {modal&&<Modal title="Add Requirement" onClose={()=>setModal(false)} onSubmit={add}
-      fields={[{k:'residentType',l:'Resident Type',type:'select',opts:['owner','tenant','family_member']},{k:'docType',l:'Document Type',type:'select',opts:['property_papers','government_id','rent_agreement','address_proof','other']}]}/>}
+      fields={[{k:'residentType',l:'Resident Type',type:'select',opts:['owner','owner_family','tenant','tenant_family']},{k:'docType',l:'Document Type',type:'select',opts:['property_papers','government_id','rent_agreement','address_proof','noc','photo','other']}]}/>}
   </div>;
 }
 
