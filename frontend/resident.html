@@ -288,6 +288,83 @@ Keep message under 10 words. Only include prefill fields the user actually menti
   </div>;
 }
 
+// ─── Splash Screen ────────────────────────────────────────────────────────────
+// Replace SPLASH_BG_IMAGE and SPLASH_LOGO_IMAGE with your actual asset URLs.
+// SPLASH_BG_IMAGE  : full-bleed background (photo or gradient art)
+// SPLASH_LOGO_IMAGE: your app/society logo (PNG with transparency recommended)
+const SPLASH_BG_IMAGE   = null; // e.g. '/static/splash-bg.jpg'
+const SPLASH_LOGO_IMAGE = null; // e.g. '/static/logo.png'
+
+function SplashScreen({ visible }) {
+  return <div style={{
+    position:'fixed', inset:0, zIndex:9999,
+    display:'flex', flexDirection:'column',
+    alignItems:'center', justifyContent:'center',
+    // Background: swap to SPLASH_BG_IMAGE when you have the asset
+    background: SPLASH_BG_IMAGE
+      ? `url(${SPLASH_BG_IMAGE}) center/cover no-repeat`
+      : 'linear-gradient(160deg, #0a0a0f 0%, #1a0f2e 50%, #0a0a1a 100%)',
+    transition: 'opacity 0.5s ease, transform 0.5s ease',
+    opacity: visible ? 1 : 0,
+    transform: visible ? 'scale(1)' : 'scale(1.04)',
+    pointerEvents: visible ? 'all' : 'none',
+  }}>
+    {/* Ambient glow blobs */}
+    <div style={{position:'absolute',top:'20%',left:'30%',width:280,height:280,borderRadius:'50%',
+      background:'radial-gradient(circle, rgba(108,92,231,0.18) 0%, transparent 70%)',
+      filter:'blur(40px)',pointerEvents:'none'}}/>
+    <div style={{position:'absolute',bottom:'25%',right:'20%',width:200,height:200,borderRadius:'50%',
+      background:'radial-gradient(circle, rgba(162,155,254,0.12) 0%, transparent 70%)',
+      filter:'blur(40px)',pointerEvents:'none'}}/>
+
+    {/* Logo area */}
+    <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:20,zIndex:1}}>
+      {SPLASH_LOGO_IMAGE
+        ? <img src={SPLASH_LOGO_IMAGE} alt="Logo"
+            style={{width:110,height:110,objectFit:'contain',borderRadius:24,
+              boxShadow:'0 8px 40px rgba(108,92,231,0.4)'}}/>
+        : /* Placeholder logo tile — remove once you supply SPLASH_LOGO_IMAGE */
+          <div style={{width:110,height:110,borderRadius:28,
+            background:'linear-gradient(135deg,#6c5ce7,#a29bfe)',
+            display:'flex',alignItems:'center',justifyContent:'center',
+            boxShadow:'0 8px 40px rgba(108,92,231,0.5)',
+            fontSize:44,userSelect:'none'}}>
+            🏘
+          </div>}
+
+      {/* App name */}
+      <div style={{textAlign:'center'}}>
+        <div style={{fontSize:32,fontWeight:800,letterSpacing:-1,
+          background:'linear-gradient(135deg,#ffffff,#a29bfe)',
+          WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',
+          marginBottom:6}}>
+          PA Lite
+        </div>
+        <div style={{fontSize:13,color:'rgba(255,255,255,0.45)',fontWeight:500,letterSpacing:1}}>
+          SMART COMMUNITY LIVING
+        </div>
+      </div>
+    </div>
+
+    {/* Bottom loader */}
+    <div style={{position:'absolute',bottom:52,display:'flex',flexDirection:'column',alignItems:'center',gap:12}}>
+      <div style={{width:40,height:3,borderRadius:2,background:'rgba(255,255,255,0.1)',overflow:'hidden'}}>
+        <div style={{height:'100%',borderRadius:2,background:'linear-gradient(90deg,#6c5ce7,#a29bfe)',
+          animation:'splashBar 1.6s ease-in-out infinite'}}/>
+      </div>
+      <div style={{fontSize:11,color:'rgba(255,255,255,0.25)',letterSpacing:0.5}}>Loading…</div>
+    </div>
+
+    <style>{`
+      @keyframes splashBar {
+        0%   { width: 0%;   margin-left: 0% }
+        50%  { width: 70%;  margin-left: 15% }
+        100% { width: 0%;   margin-left: 100% }
+      }
+    `}</style>
+  </div>;
+}
+
 function App() {
   const [token, setToken] = useState(localStorage.getItem('gk_token'));
   const [user, setUser] = useState(null);
@@ -296,7 +373,9 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [voiceAction, setVoiceAction] = useState(null);
-  const [signupState, setSignupState] = useState(null); // {sid, phone, token, user} for new users
+  const [signupState, setSignupState] = useState(null);
+  const [splashVisible, setSplashVisible] = useState(true);
+  const splashDoneRef = React.useRef(false); // tracks whether min splash time has passed
 
   const loadMe = useCallback(()=>{
     if(!token) {setLoading(false); return;}
@@ -309,15 +388,20 @@ function App() {
 
   useEffect(()=>{loadMe();},[loadMe]);
 
+  // Dismiss splash once BOTH conditions are true:
+  // 1. minimum display time (1.8s) has elapsed
+  // 2. the auth/loading call has finished
+  useEffect(()=>{
+    const minTimer = setTimeout(()=>{ splashDoneRef.current = true; if(!loading) setSplashVisible(false); }, 1800);
+    return ()=>clearTimeout(minTimer);
+  },[]);
+  useEffect(()=>{ if(!loading && splashDoneRef.current) setSplashVisible(false); },[loading]);
+
   const handleLogin = (t,u)=>{localStorage.setItem('gk_token',t);setToken(t);setUser(u);setLoading(true);setTimeout(loadMe,100);};
   const handleLogout = ()=>{localStorage.removeItem('gk_token');setToken(null);setUser(null);setCtx(null);setPage('home');setSignupState(null);};
 
-  // New user — show signup before storing token
-  const handleSignup = (sid, phone, token, user) => {
-    setSignupState({sid, phone, token, user});
-  };
-  const handleSignupDone = (result) => {
-    // Store token now, reload context → will land on pending screen
+  const handleSignup = (sid, phone, token, user) => { setSignupState({sid, phone, token, user}); };
+  const handleSignupDone = () => {
     localStorage.setItem('gk_token', signupState.token);
     setToken(signupState.token);
     setSignupState(null);
@@ -327,33 +411,23 @@ function App() {
 
   const switchApt = (aptId)=>{api('/api/context/switch',{method:'POST',body:JSON.stringify({apartmentId:aptId})}).then(()=>loadMe());};
 
-  if(loading) return <div className="login"><h1>PA Lite</h1><p>Loading...</p></div>;
-
-  // New user completing signup
-  if(signupState) return <SignupPage
-    sessionId={signupState.sid}
-    phone={signupState.phone}
-    onDone={handleSignupDone}/>;
-
-  if(!token) return <LoginPage onLogin={handleLogin} onSignup={handleSignup}/>;
-
-  // Check resident status — pending or rejected users get a gate screen
-  const resident = ctx?.resident;
-  if(resident && (resident.status==='pending' || resident.status==='rejected')) {
-    return <PendingScreen
-      resident={resident}
-      user={user}
-      onLogout={handleLogout}
-      onRefresh={loadMe}/>;
-  }
-
-  const pages = {home:<HomePage ctx={ctx} setPage={setPage}/>,profile:<ProfilePage ctx={ctx} user={user} onLogout={handleLogout} switchApt={switchApt} reload={loadMe} setPage={setPage}/>,bookings:<BookingsPage setPage={setPage} prefill={voiceAction?.page==='bookings'?voiceAction.prefill:null}/>,visitors:<VisitorsPage ctx={ctx} setPage={setPage} prefill={voiceAction?.page==='visitors'?voiceAction.prefill:null}/>,marketplace:<MarketplacePage setPage={setPage} prefill={voiceAction?.page==='marketplace'?voiceAction.prefill:null}/>,locks:<LocksPage setPage={setPage}/>,news:<NewsPage setPage={setPage}/>};
-
-  return <div className="app">
-    {voiceOpen && <VoiceAssistant
-      onNavigate={(page, prefill)=>{setPage(page); setVoiceAction({page, prefill: prefill||{}}); setTimeout(()=>setVoiceAction(null), 5000);}}
-      onClose={()=>setVoiceOpen(false)}/>}
-    {pages[page] || pages.home}
+  // Determine the main content to render beneath the splash
+  let content;
+  if(signupState) {
+    content = <SignupPage sessionId={signupState.sid} phone={signupState.phone} onDone={handleSignupDone}/>;
+  } else if(!token || loading) {
+    content = <LoginPage onLogin={handleLogin} onSignup={handleSignup}/>;
+  } else {
+    const resident = ctx?.resident;
+    if(resident && (resident.status==='pending' || resident.status==='rejected')) {
+      content = <PendingScreen resident={resident} user={user} onLogout={handleLogout} onRefresh={loadMe}/>;
+    } else {
+      const pages = {home:<HomePage ctx={ctx} setPage={setPage}/>,profile:<ProfilePage ctx={ctx} user={user} onLogout={handleLogout} switchApt={switchApt} reload={loadMe} setPage={setPage}/>,bookings:<BookingsPage setPage={setPage} prefill={voiceAction?.page==='bookings'?voiceAction.prefill:null}/>,visitors:<VisitorsPage ctx={ctx} setPage={setPage} prefill={voiceAction?.page==='visitors'?voiceAction.prefill:null}/>,marketplace:<MarketplacePage setPage={setPage} prefill={voiceAction?.page==='marketplace'?voiceAction.prefill:null}/>,locks:<LocksPage setPage={setPage}/>,news:<NewsPage setPage={setPage}/>};
+      content = <div className="app">
+        {voiceOpen && <VoiceAssistant
+          onNavigate={(page, prefill)=>{setPage(page); setVoiceAction({page, prefill: prefill||{}}); setTimeout(()=>setVoiceAction(null), 5000);}}
+          onClose={()=>setVoiceOpen(false)}/>}
+        {pages[page] || pages.home}
     <div className="nav">
       <div className="nav-inner">
         <div className="nav-pill">
@@ -372,6 +446,13 @@ function App() {
       </div>
     </div>
   </div>;
+    }
+  }
+
+  return <>
+    <SplashScreen visible={splashVisible}/>
+    {content}
+  </>;
 }
 
 // ─── Resident type config ────────────────────────────────────────────────────
