@@ -7,6 +7,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
@@ -57,6 +58,16 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .label{font-size:12px;color:var(--text2);margin-bottom:6px;display:block}
 .form-group{margin-bottom:14px}
 select.input{appearance:none;cursor:pointer}
+/* QR Code */
+.qr-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.92);backdrop-filter:blur(12px);z-index:600;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px}
+.qr-modal-card{background:#fff;border-radius:24px;padding:28px;display:flex;flex-direction:column;align-items:center;gap:16px;max-width:320px;width:100%}
+.qr-modal-name{font-size:18px;font-weight:700;color:#0a0a0f;text-align:center}
+.qr-modal-meta{font-size:13px;color:#555;text-align:center;line-height:1.5}
+.qr-modal-code{font-size:11px;color:#888;font-family:'Space Mono',monospace;letter-spacing:1px}
+.qr-modal-btns{display:flex;gap:10px;width:100%}
+.qr-inline{cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px;background:rgba(255,255,255,0.04);border-radius:12px;border:1px solid rgba(255,255,255,0.08);margin-top:10px;transition:.2s}
+.qr-inline:hover{background:rgba(255,255,255,0.08)}
+.qr-inline-hint{font-size:10px;color:var(--text2)}
 /* Photo picker */
 .photo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px}
 .photo-thumb{aspect-ratio:1;border-radius:10px;object-fit:cover;width:100%;display:block;background:var(--card2)}
@@ -691,6 +702,7 @@ function VisitorsPage({ctx,setPage,prefill}) {
   const [modal, setModal] = useState(false);
   const [moves, setMoves] = useState([]);
   const [invitePrefill, setInvitePrefill] = useState({});
+  const [qrInvite, setQrInvite] = useState(null); // invite object to show QR for
 
   useEffect(()=>{
     if(!prefill) return;
@@ -711,8 +723,12 @@ function VisitorsPage({ctx,setPage,prefill}) {
   },[]);
 
   const createInvite = d=>{api('/api/visitors/invite',{method:'POST',body:JSON.stringify(d)}).then(r=>{
-    if(r.qrCode) alert(`Invite created! QR Code: ${r.qrCode}`);
-    api('/api/visitors/my-invitations').then(setInvites);setModal(false);
+    api('/api/visitors/my-invitations').then(freshInvites=>{
+      setInvites(freshInvites);
+      // Auto-open QR for the newly created invite
+      if(r.id) { const created = freshInvites.find(i=>i.id===r.id); if(created) setQrInvite(created); }
+    });
+    setModal(false);
   });};
 
   const createMove = d=>{api('/api/move-requests',{method:'POST',body:JSON.stringify(d)}).then(()=>{api('/api/move-requests/my').then(setMoves);setModal(false);});};
@@ -726,7 +742,10 @@ function VisitorsPage({ctx,setPage,prefill}) {
       {invites.map(i=><div key={i.id} className="card">
         <div className="flex-between"><div><div className="card-title">{i.visitor_name}</div><div className="card-sub">{i.visitor_type} &bull; {i.visitor_phone||''}</div></div>
         <span className={`badge badge-${i.status==='active'?'green':i.status==='used'?'purple':'red'}`}>{i.status}</span></div>
-        {i.status==='active' && <div className="qr-box mt-2">{i.qr_code}</div>}
+        {i.status==='active' && <div className="qr-inline mt-2" onClick={()=>setQrInvite(i)}>
+          <QRCanvas code={i.qr_code} size={80}/>
+          <span className="qr-inline-hint">Tap to share gate pass</span>
+        </div>}
       </div>)}
       {!invites.length && <div className="empty">No invitations</div>}
     </>}
@@ -737,6 +756,7 @@ function VisitorsPage({ctx,setPage,prefill}) {
       {!moves.length && <div className="empty">No move requests</div>}
     </>}
 
+    {qrInvite && <InviteQRModal invite={qrInvite} onClose={()=>setQrInvite(null)}/>}
     {modal==='invite' && <FormModal title="Create Invitation" onClose={()=>setModal(false)} onSubmit={createInvite} initialData={invitePrefill}
       fields={[{key:'visitorName',label:'Visitor Name'},{key:'visitorPhone',label:'Phone'},{key:'visitorType',label:'Type',type:'select',options:['guest','cab','delivery','daily_help','other']},{key:'purpose',label:'Purpose'},{key:'validFrom',label:'Valid From',type:'datetime-local'},{key:'validTo',label:'Valid To',type:'datetime-local'}]}/>}
     {modal==='move' && <FormModal title="Move Request" onClose={()=>setModal(false)} onSubmit={createMove}
@@ -870,6 +890,82 @@ function MarketplacePage({setPage, prefill}) {
       </div>
     </div>}
 
+    </div>
+  </div>;
+}
+
+function QRCanvas({code, size=80}) {
+  const ref = React.useRef(null);
+  useEffect(()=>{
+    if(!ref.current || !window.QRCode) return;
+    ref.current.innerHTML = '';
+    new QRCode(ref.current, {
+      text: code, width: size, height: size,
+      colorDark:'#000', colorLight:'#fff',
+      correctLevel: QRCode.CorrectLevel.M,
+    });
+  },[code, size]);
+  return <div ref={ref} style={{borderRadius:6,overflow:'hidden',lineHeight:0}}/>;
+}
+
+function InviteQRModal({invite, onClose}) {
+  const canvasRef = React.useRef(null);
+
+  useEffect(()=>{
+    if(!canvasRef.current) return;
+    canvasRef.current.innerHTML = '';
+    new QRCode(canvasRef.current, {
+      text: invite.qr_code,
+      width: 220, height: 220,
+      colorDark: '#000000', colorLight: '#ffffff',
+      correctLevel: QRCode.CorrectLevel.H,
+    });
+  }, [invite.qr_code]);
+
+  const download = () => {
+    const img = canvasRef.current?.querySelector('img') || canvasRef.current?.querySelector('canvas');
+    if(!img) return;
+    const src = img.tagName === 'CANVAS' ? img.toDataURL() : img.src;
+    const a = document.createElement('a');
+    a.href = src; a.download = `GatePass-${invite.visitor_name.replace(/\s+/g,'-')}.png`;
+    a.click();
+  };
+
+  const share = async () => {
+    const img = canvasRef.current?.querySelector('img') || canvasRef.current?.querySelector('canvas');
+    if(!img) return;
+    const src = img.tagName === 'CANVAS' ? img.toDataURL() : img.src;
+    if(navigator.share) {
+      const blob = await (await fetch(src)).blob();
+      const file = new File([blob], `GatePass-${invite.visitor_name}.png`, {type:'image/png'});
+      navigator.share({title:`Gate Pass – ${invite.visitor_name}`, text:`QR Code: ${invite.qr_code}`, files:[file]}).catch(()=>{});
+    } else {
+      await navigator.clipboard.writeText(invite.qr_code);
+      alert('QR code copied to clipboard: ' + invite.qr_code);
+    }
+  };
+
+  const validRange = invite.valid_from || invite.valid_to
+    ? `${invite.valid_from ? new Date(invite.valid_from).toLocaleString() : ''}${invite.valid_from && invite.valid_to ? ' → ' : ''}${invite.valid_to ? new Date(invite.valid_to).toLocaleString() : ''}`
+    : null;
+
+  return <div className="qr-modal-overlay" onClick={onClose}>
+    <div className="qr-modal-card" onClick={e=>e.stopPropagation()}>
+      <div style={{fontSize:28}}>🎫</div>
+      <div className="qr-modal-name">{invite.visitor_name}</div>
+      <div className="qr-modal-meta">
+        {invite.visitor_type}{invite.purpose ? ` · ${invite.purpose}` : ''}
+        {validRange && <><br/>{validRange}</>}
+      </div>
+      <div ref={canvasRef}/>
+      <div className="qr-modal-code">{invite.qr_code}</div>
+      <div className="qr-modal-btns">
+        <button className="btn btn-secondary" style={{flex:1,fontSize:13}} onClick={share}>
+          {navigator.share ? '📤 Share' : '📋 Copy Code'}
+        </button>
+        <button className="btn btn-primary" style={{flex:1,fontSize:13}} onClick={download}>⬇ Save</button>
+      </div>
+      <button className="btn btn-secondary" style={{width:'100%',fontSize:13}} onClick={onClose}>Close</button>
     </div>
   </div>;
 }
