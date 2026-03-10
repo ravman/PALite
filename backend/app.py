@@ -88,6 +88,10 @@ def verify_otp():
         user_id = uid('usr-'); db.execute('INSERT INTO users(id,phone) VALUES(?,?)',(user_id,sess['phone']))
         user = dr(db.execute('SELECT * FROM users WHERE id=?',(user_id,)).fetchone())
     roles = drs(db.execute('SELECT usr.*, s.name as society_name FROM user_society_roles usr JOIN societies s ON usr.society_id=s.id WHERE usr.user_id=?',(user['id'],)).fetchall())
+    # Auto-set active context if none exists (guards/admins have no apartment)
+    ctx = dr(db.execute('SELECT * FROM user_active_context WHERE user_id=?',(user['id'],)).fetchone())
+    if not ctx and roles:
+        db.execute('INSERT OR REPLACE INTO user_active_context VALUES(?,?,?)',(user['id'],None,roles[0]['society_id']))
     db.commit()
     return jsonify({'token':sess['id'],'user':user,'isNew':is_new,'roles':roles})
 
