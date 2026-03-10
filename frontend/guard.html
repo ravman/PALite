@@ -156,15 +156,35 @@ function ScanPage() {
 function EntryPage({ctx}) {
   const [data,setData]=useState({visitorType:'guest'});
   const [apts,setApts]=useState([]);const [towers,setTowers]=useState([]);const [tower,setTower]=useState('');
+  const [deliveryApts,setDeliveryApts]=useState([]); // [{towerId,aptId,label}]
+  const [pickTower,setPickTower]=useState('');const [pickApts,setPickApts]=useState([]);const [pickApt,setPickApt]=useState('');
   const set=(k,v)=>setData(d=>({...d,[k]:v}));
+  const isDelivery=data.visitorType==='delivery';
 
   useEffect(()=>{const sid=ctx&&ctx.society&&ctx.society.id;if(!sid)return;fetch('/api/lookup/towers?societyId='+sid).then(r=>r.json()).then(d=>setTowers(d||[]));},[ctx]);
-  useEffect(()=>{if(tower) fetch('/api/lookup/apartments?towerId='+tower).then(r=>r.json()).then(setApts);},[tower]);
+  // For non-delivery single apt
+  useEffect(()=>{if(tower&&!isDelivery) fetch('/api/lookup/apartments?towerId='+tower).then(r=>r.json()).then(setApts);},[tower,isDelivery]);
+  // For delivery apt picker
+  useEffect(()=>{if(pickTower) fetch('/api/lookup/apartments?towerId='+pickTower).then(r=>r.json()).then(setPickApts);},[pickTower]);
+
+  const addDeliveryApt=()=>{
+    if(!pickApt) return;
+    const apt=pickApts.find(a=>a.id===pickApt);
+    const twr=towers.find(t=>t.id===pickTower);
+    if(!apt||!twr) return;
+    if(deliveryApts.find(d=>d.aptId===pickApt)) return; // no duplicates
+    setDeliveryApts(prev=>[...prev,{towerId:pickTower,aptId:pickApt,label:`${twr.name} - ${apt.unit_number}`}]);
+    setPickApt('');
+  };
+  const removeDeliveryApt=(aptId)=>setDeliveryApts(prev=>prev.filter(d=>d.aptId!==aptId));
 
   const submit=()=>{
     if(!data.visitorName) return alert('Name required');
-    api('/api/guard/create-entry',{method:'POST',body:JSON.stringify(data)}).then(d=>{
-      if(d.success){alert('Entry created! Approval request sent.');setData({visitorType:'guest'});}
+    if(isDelivery&&deliveryApts.length===0) return alert('Add at least one apartment for delivery');
+    const payload={...data};
+    if(isDelivery) payload.deliveryApartments=deliveryApts.map(d=>d.aptId);
+    api('/api/guard/create-entry',{method:'POST',body:JSON.stringify(payload)}).then(d=>{
+      if(d.success){alert('Entry created! Approval sent to residents.');setData({visitorType:'guest'});setDeliveryApts([]);setPickTower('');setPickApt('');}
       else alert(d.error||'Failed');
     });
   };
@@ -176,12 +196,31 @@ function EntryPage({ctx}) {
     <div className="form-group"><label className="label">Type</label>
       <select className="input" value={data.visitorType} onChange={e=>set('visitorType',e.target.value)}>
         {['guest','cab','delivery','daily_help','other'].map(t=><option key={t} value={t}>{t}</option>)}</select></div>
-    <div className="form-group"><label className="label">Tower</label>
-      <select className="input" value={tower} onChange={e=>setTower(e.target.value)}>
-        <option value="">Select tower</option>{towers.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
-    {tower&&<div className="form-group"><label className="label">Apartment</label>
-      <select className="input" value={data.apartmentId||''} onChange={e=>set('apartmentId',e.target.value)}>
-        <option value="">Select apartment</option>{apts.map(a=><option key={a.id} value={a.id}>{a.unit_number} (Floor {a.floor})</option>)}</select></div>}
+
+    {!isDelivery&&<>
+      <div className="form-group"><label className="label">Tower</label>
+        <select className="input" value={tower} onChange={e=>setTower(e.target.value)}>
+          <option value="">Select tower</option>{towers.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
+      {tower&&<div className="form-group"><label className="label">Apartment</label>
+        <select className="input" value={data.apartmentId||''} onChange={e=>set('apartmentId',e.target.value)}>
+          <option value="">Select apartment</option>{apts.map(a=><option key={a.id} value={a.id}>{a.unit_number} (Floor {a.floor})</option>)}</select></div>}
+    </>}
+
+    {isDelivery&&<div className="form-group">
+      <label className="label">Delivery Apartments <span style={{color:'var(--accent)'}}>({deliveryApts.length} added)</span></label>
+      {deliveryApts.map(d=><div key={d.aptId} style={{display:'flex',alignItems:'center',justifyContent:'space-between',background:'rgba(88,166,255,.08)',border:'1px solid rgba(88,166,255,.2)',borderRadius:8,padding:'8px 12px',marginBottom:6}}>
+        <span style={{fontSize:13}}>{d.label}</span>
+        <button onClick={()=>removeDeliveryApt(d.aptId)} style={{background:'none',border:'none',color:'var(--red)',cursor:'pointer',fontSize:16,lineHeight:1}}>×</button>
+      </div>)}
+      <div style={{display:'flex',gap:8,marginTop:8}}>
+        <select className="input" style={{flex:1}} value={pickTower} onChange={e=>{setPickTower(e.target.value);setPickApt('');}}>
+          <option value="">Tower</option>{towers.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select>
+        <select className="input" style={{flex:1}} value={pickApt} onChange={e=>setPickApt(e.target.value)} disabled={!pickTower}>
+          <option value="">Apt</option>{pickApts.map(a=><option key={a.id} value={a.id}>{a.unit_number}</option>)}</select>
+        <button onClick={addDeliveryApt} disabled={!pickApt} style={{background:'var(--accent)',color:'#0d1117',border:'none',borderRadius:10,padding:'0 16px',fontWeight:700,fontSize:18,cursor:'pointer',opacity:pickApt?1:0.4}}>+</button>
+      </div>
+    </div>}
+
     <div className="form-group"><label className="label">Notes</label><input className="input" value={data.notes||''} onChange={e=>set('notes',e.target.value)}/></div>
     <button className="btn btn-primary" onClick={submit}>Create Entry & Send Approval</button>
   </div>;
