@@ -28,7 +28,7 @@ u1,u2,u3,u4,u5 = 'usr-001','usr-002','usr-003','usr-004','usr-005'
 for uid2,ph,nm,em in [(admin1,'9999900001','Admin Sharma','admin@gv.com'),(admin2,'9999900003','Admin Desai','admin@sh.com'),(guard1,'9999900002','Raju Guard',None),(guard2,'9999900004','Mohan Guard',None),(u1,'9876543210','Rahul Mehta','rahul@email.com'),(u2,'9876543211','Priya Patel','priya@email.com'),(u3,'9876543212','Amit Kumar','amit@email.com'),(u4,'9876543213','Sneha Reddy','sneha@email.com'),(u5,'9876543214','Vikram Singh','vikram@email.com')]:
     c.execute("INSERT INTO users VALUES(?,?,?,?,CURRENT_TIMESTAMP)", (uid2,ph,nm,em))
 
-for u,s,r in [(admin1,s1,'admin'),(admin2,s2,'admin'),(guard1,s1,'guard'),(guard2,s2,'guard'),(u1,s1,'resident'),(u2,s1,'resident'),(u3,s1,'resident'),(u4,s1,'resident'),(u1,s2,'resident'),(u5,s2,'resident')]:
+for u,s,r in [(admin1,s1,'admin'),(admin1,s1,'super_admin'),(admin2,s2,'admin'),(guard1,s1,'guard'),(guard2,s2,'guard'),(u1,s1,'resident'),(u2,s1,'resident'),(u3,s1,'resident'),(u4,s1,'resident'),(u1,s2,'resident'),(u5,s2,'resident')]:
     c.execute("INSERT INTO user_society_roles VALUES(?,?,?,?,CURRENT_TIMESTAMP)", (uid('ur-'),u,s,r))
 
 c.execute("INSERT INTO residents VALUES(?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)", ('res-001',u1,'apt-A101',s1,'owner','approved',None,None,None))

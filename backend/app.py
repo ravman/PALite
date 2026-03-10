@@ -622,6 +622,144 @@ def lookup_apartments():
     tid = request.args.get('towerId')
     return jsonify(drs(get_conn().execute('SELECT id, unit_number, floor FROM apartments WHERE tower_id=?',(tid,)).fetchall()))
 
+# ==================== SUPER ADMIN - Society Management ====================
+
+def super_admin_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        auth = request.headers.get('Authorization', '')
+        token = auth.replace('Bearer ', '')
+        if not token: return jsonify({'error': 'Unauthorized'}), 401
+        db = get_db()
+        sess = dr(db.execute('SELECT * FROM otp_sessions WHERE id=? AND verified=1', (token,)).fetchone())
+        if not sess: return jsonify({'error': 'Unauthorized'}), 401
+        user = dr(db.execute('SELECT * FROM users WHERE phone=?', (sess['phone'],)).fetchone())
+        if not user: return jsonify({'error': 'Unauthorized'}), 401
+        roles = [r['role'] for r in drs(db.execute('SELECT role FROM user_society_roles WHERE user_id=?', (user['id'],)).fetchall())]
+        if 'super_admin' not in roles: return jsonify({'error': 'Super admin access required'}), 403
+        g.user = user
+        return f(*args, **kwargs)
+    return decorated
+
+# List all societies
+@app.route('/api/superadmin/societies')
+@super_admin_required
+def sa_list_societies():
+    db = get_db()
+    societies = drs(db.execute('SELECT * FROM societies ORDER BY created_at DESC').fetchall())
+    for s in societies:
+        s['towers'] = drs(db.execute('SELECT t.*, COUNT(a.id) as apartment_count FROM towers t LEFT JOIN apartments a ON a.tower_id=t.id WHERE t.society_id=? GROUP BY t.id', (s['id'],)).fetchall())
+        s['admin_count'] = db.execute("SELECT COUNT(*) FROM user_society_roles WHERE society_id=? AND role IN ('admin','super_admin')", (s['id'],)).fetchone()[0]
+        s['guard_count'] = db.execute("SELECT COUNT(*) FROM user_society_roles WHERE society_id=? AND role='guard'", (s['id'],)).fetchone()[0]
+        s['resident_count'] = db.execute("SELECT COUNT(*) FROM residents WHERE society_id=? AND status='approved'", (s['id'],)).fetchone()[0]
+    return jsonify(societies)
+
+# Create society
+@app.route('/api/superadmin/societies', methods=['POST'])
+@super_admin_required
+def sa_create_society():
+    d = request.json; db = get_db()
+    if not d.get('name'): return jsonify({'error': 'Name required'}), 400
+    sid = uid('soc-')
+    db.execute('INSERT INTO societies(id,name,address,city,state,pincode) VALUES(?,?,?,?,?,?)',
+               (sid, d['name'], d.get('address',''), d.get('city',''), d.get('state',''), d.get('pincode','')))
+    # Auto-assign creator as super_admin of new society
+    db.execute('INSERT INTO user_society_roles(id,user_id,society_id,role,created_at) VALUES(?,?,?,?,CURRENT_TIMESTAMP)',
+               (uid('ur-'), g.user['id'], sid, 'super_admin'))
+    db.commit()
+    return jsonify({'success': True, 'id': sid})
+
+# Edit society
+@app.route('/api/superadmin/societies/<sid>', methods=['PUT'])
+@super_admin_required
+def sa_edit_society(sid):
+    d = request.json; db = get_db()
+    db.execute('UPDATE societies SET name=?,address=?,city=?,state=?,pincode=? WHERE id=?',
+               (d.get('name'), d.get('address',''), d.get('city',''), d.get('state',''), d.get('pincode',''), sid))
+    db.commit()
+    return jsonify({'success': True})
+
+# Delete society
+@app.route('/api/superadmin/societies/<sid>', methods=['DELETE'])
+@super_admin_required
+def sa_delete_society(sid):
+    db = get_db()
+    db.execute('DELETE FROM societies WHERE id=?', (sid,))
+    db.execute('DELETE FROM towers WHERE society_id=?', (sid,))
+    db.execute('DELETE FROM user_society_roles WHERE society_id=?', (sid,))
+    db.commit()
+    return jsonify({'success': True})
+
+# Add tower to society
+@app.route('/api/superadmin/societies/<sid>/towers', methods=['POST'])
+@super_admin_required
+def sa_add_tower(sid):
+    d = request.json; db = get_db()
+    if not d.get('name'): return jsonify({'error': 'Tower name required'}), 400
+    tid = uid('twr-')
+    floors = int(d.get('floors', 10))
+    apts_per_floor = int(d.get('aptsPerFloor', 4))
+    db.execute('INSERT INTO towers(id,society_id,name,floors) VALUES(?,?,?,?)', (tid, sid, d['name'], floors))
+    # Auto-generate apartments
+    for floor in range(1, floors + 1):
+        for apt_num in range(1, apts_per_floor + 1):
+            unit = f'{floor}0{apt_num}' if apt_num < 10 else f'{floor}{apt_num}'
+            db.execute('INSERT INTO apartments(id,tower_id,unit_number,floor) VALUES(?,?,?,?)',
+                       (uid('apt-'), tid, unit, floor))
+    db.commit()
+    return jsonify({'success': True, 'id': tid, 'apartmentsCreated': floors * apts_per_floor})
+
+# Delete tower
+@app.route('/api/superadmin/towers/<tid>', methods=['DELETE'])
+@super_admin_required
+def sa_delete_tower(tid):
+    db = get_db()
+    db.execute('DELETE FROM apartments WHERE tower_id=?', (tid,))
+    db.execute('DELETE FROM towers WHERE id=?', (tid,))
+    db.commit()
+    return jsonify({'success': True})
+
+# List staff (admins + guards) for a society
+@app.route('/api/superadmin/societies/<sid>/staff')
+@super_admin_required
+def sa_list_staff(sid):
+    db = get_db()
+    staff = drs(db.execute("""SELECT u.id, u.name, u.phone, usr.role, usr.id as role_id
+        FROM user_society_roles usr JOIN users u ON usr.user_id=u.id
+        WHERE usr.society_id=? AND usr.role IN ('admin','guard','super_admin')
+        ORDER BY usr.role, u.name""", (sid,)).fetchall())
+    return jsonify(staff)
+
+# Assign staff (admin or guard) to a society by phone
+@app.route('/api/superadmin/societies/<sid>/staff', methods=['POST'])
+@super_admin_required
+def sa_assign_staff(sid):
+    d = request.json; db = get_db()
+    phone = d.get('phone'); role = d.get('role')
+    if not phone or role not in ('admin', 'guard'): return jsonify({'error': 'Phone and role (admin/guard) required'}), 400
+    user = dr(db.execute('SELECT * FROM users WHERE phone=?', (phone,)).fetchone())
+    if not user:
+        # Create user account
+        user_id = uid('usr-')
+        db.execute('INSERT INTO users(id,phone,name) VALUES(?,?,?)', (user_id, phone, d.get('name', phone)))
+        user = dr(db.execute('SELECT * FROM users WHERE id=?', (user_id,)).fetchone())
+    # Check not already assigned
+    existing = dr(db.execute('SELECT * FROM user_society_roles WHERE user_id=? AND society_id=?', (user['id'], sid)).fetchone())
+    if existing: return jsonify({'error': 'User already has a role in this society'}), 400
+    db.execute('INSERT INTO user_society_roles(id,user_id,society_id,role,created_at) VALUES(?,?,?,?,CURRENT_TIMESTAMP)',
+               (uid('ur-'), user['id'], sid, role))
+    db.commit()
+    return jsonify({'success': True, 'userId': user['id']})
+
+# Remove staff from society
+@app.route('/api/superadmin/staff/<role_id>', methods=['DELETE'])
+@super_admin_required
+def sa_remove_staff(role_id):
+    db = get_db()
+    db.execute('DELETE FROM user_society_roles WHERE id=?', (role_id,))
+    db.commit()
+    return jsonify({'success': True})
+
 if __name__ == '__main__':
     print("GateKeeper API starting on port 3001...")
     app.run(host='0.0.0.0', port=3001, debug=True)

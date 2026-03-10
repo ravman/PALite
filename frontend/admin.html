@@ -90,7 +90,8 @@ function App() {
   if(loading) return <div className="login"><h1>Loading...</h1></div>;
   if(!token) return <LoginPage onLogin={handleLogin}/>;
 
-  const pages = {dashboard:<Dashboard/>,residents:<Residents/>,spaces:<Spaces/>,bookings:<Bookings/>,approvals:<Approvals/>,daily_help:<DailyHelp/>,documents:<Documents/>,doc_reqs:<DocReqs/>};
+  const isSuperAdmin = ctx?.roles?.some(r=>r.role==='super_admin');
+  const pages = {dashboard:<Dashboard/>,residents:<Residents/>,spaces:<Spaces/>,bookings:<Bookings/>,approvals:<Approvals/>,daily_help:<DailyHelp/>,documents:<Documents/>,doc_reqs:<DocReqs/>,societies:<Societies token={token}/>};
 
   return <div className="layout">
     <div className="sidebar">
@@ -100,6 +101,7 @@ function App() {
         {[['dashboard','Dashboard'],['residents','Residents'],['spaces','Spaces'],['bookings','Bookings'],['approvals','Approvals'],['daily_help','Daily Help'],['documents','Documents'],['doc_reqs','Doc Requirements']].map(([k,l])=>
           <button key={k} className={page===k?'active':''} onClick={()=>setPage(k)}>{l}</button>
         )}
+        {isSuperAdmin&&<button className={page==='societies'?'active':''} onClick={()=>setPage('societies')} style={{borderTop:'1px solid #2d2d3d',marginTop:8,paddingTop:16}}>⚙ Manage Societies</button>}
         <button style={{color:'#e17055',marginTop:20}} onClick={()=>{localStorage.removeItem('gk_admin_token');setToken(null);}}>Sign Out</button>
       </nav>
     </div>
@@ -262,6 +264,168 @@ function Modal({title,onClose,onSubmit,fields}) {
       :<input className="input" type={f.type||'text'} value={data[f.k]||''} onChange={e=>set(f.k,e.target.value)}/>}</div>)}
     <div className="flex" style={{gap:8,marginTop:16}}><button className="btn btn-primary" style={{flex:1}} onClick={()=>onSubmit(data)}>Submit</button><button className="btn" style={{flex:1,background:'var(--bg)'}} onClick={onClose}>Cancel</button></div>
   </div></div>;
+}
+
+function Societies({token}) {
+  const [societies, setSocieties] = useState([]);
+  const [selected, setSelected] = useState(null);
+  const [staff, setStaff] = useState([]);
+  const [view, setView] = useState('list'); // list | detail | newSociety | newTower | newStaff
+  const [form, setForm] = useState({});
+  const [msg, setMsg] = useState('');
+
+  const load = () => api('/api/superadmin/societies').then(d=>{ if(Array.isArray(d)) setSocieties(d); });
+  useEffect(()=>{ load(); }, []);
+
+  const loadStaff = (sid) => api('/api/superadmin/societies/'+sid+'/staff').then(d=>{ if(Array.isArray(d)) setStaff(d); });
+
+  const selectSociety = (s) => { setSelected(s); loadStaff(s.id); setView('detail'); };
+
+  const createSociety = () => {
+    api('/api/superadmin/societies', {method:'POST', body:JSON.stringify(form)}).then(d=>{
+      if(d.success){ setMsg('Society created!'); setForm({}); setView('list'); load(); }
+      else setMsg(d.error||'Failed');
+    });
+  };
+
+  const deleteSociety = (sid) => {
+    if(!confirm('Delete this society and all its towers/apartments? This cannot be undone.')) return;
+    api('/api/superadmin/societies/'+sid, {method:'DELETE'}).then(d=>{
+      if(d.success){ setMsg('Deleted.'); setView('list'); load(); }
+    });
+  };
+
+  const addTower = () => {
+    api('/api/superadmin/societies/'+selected.id+'/towers', {method:'POST', body:JSON.stringify(form)}).then(d=>{
+      if(d.success){ setMsg(`Tower added! ${d.apartmentsCreated} apartments created.`); setForm({}); setView('detail'); api('/api/superadmin/societies').then(r=>{ const s=r.find(x=>x.id===selected.id); if(s){setSelected(s);} }); }
+      else setMsg(d.error||'Failed');
+    });
+  };
+
+  const deleteTower = (tid) => {
+    if(!confirm('Delete this tower and all its apartments?')) return;
+    api('/api/superadmin/towers/'+tid, {method:'DELETE'}).then(d=>{ if(d.success){ load().then(()=>{ api('/api/superadmin/societies').then(r=>{ const s=r.find(x=>x.id===selected.id); if(s) setSelected(s); setSocieties(r); }); }); } });
+  };
+
+  const assignStaff = () => {
+    api('/api/superadmin/societies/'+selected.id+'/staff', {method:'POST', body:JSON.stringify(form)}).then(d=>{
+      if(d.success){ setMsg('Staff assigned!'); setForm({}); setView('detail'); loadStaff(selected.id); }
+      else setMsg(d.error||'Failed');
+    });
+  };
+
+  const removeStaff = (roleId) => {
+    if(!confirm('Remove this person from the society?')) return;
+    api('/api/superadmin/staff/'+roleId, {method:'DELETE'}).then(d=>{ if(d.success) loadStaff(selected.id); });
+  };
+
+  const s = (k,v) => setForm(f=>({...f,[k]:v}));
+  const style = { card:{background:'#1e1e2e',border:'1px solid #2d2d3d',borderRadius:12,padding:16,marginBottom:12},
+    btn:{padding:'8px 16px',border:'none',borderRadius:8,fontFamily:'inherit',fontWeight:600,fontSize:13,cursor:'pointer'},
+    input:{width:'100%',padding:'9px 12px',border:'1px solid #2d2d3d',borderRadius:8,background:'#111',color:'white',fontFamily:'inherit',fontSize:13,outline:'none',marginBottom:10},
+    label:{fontSize:12,color:'#8888a0',marginBottom:4,display:'block'} };
+
+  if(view==='newSociety') return <div style={{padding:24,maxWidth:520}}>
+    <button onClick={()=>setView('list')} style={{...style.btn,background:'none',color:'#8888a0',marginBottom:16}}>← Back</button>
+    <h2 style={{marginBottom:20}}>New Society</h2>
+    {['name','address','city','state','pincode'].map(k=><div key={k}>
+      <label style={style.label}>{k.charAt(0).toUpperCase()+k.slice(1)}{k==='name'&&' *'}</label>
+      <input style={style.input} value={form[k]||''} onChange={e=>s(k,e.target.value)} placeholder={k==='name'?'e.g. Green Valley':''} />
+    </div>)}
+    {msg&&<div style={{color:'#a8e6cf',marginBottom:12,fontSize:13}}>{msg}</div>}
+    <button onClick={createSociety} style={{...style.btn,background:'#6c5ce7',color:'white',width:'100%',padding:12}}>Create Society</button>
+  </div>;
+
+  if(view==='newTower') return <div style={{padding:24,maxWidth:520}}>
+    <button onClick={()=>setView('detail')} style={{...style.btn,background:'none',color:'#8888a0',marginBottom:16}}>← Back</button>
+    <h2 style={{marginBottom:4}}>Add Tower</h2>
+    <p style={{color:'#8888a0',fontSize:13,marginBottom:20}}>to {selected?.name}</p>
+    {[['name','Tower Name','e.g. Tower A'],['floors','Number of Floors','e.g. 12'],['aptsPerFloor','Apartments per Floor','e.g. 4']].map(([k,l,p])=><div key={k}>
+      <label style={style.label}>{l}</label>
+      <input style={style.input} value={form[k]||''} onChange={e=>s(k,e.target.value)} placeholder={p} type={k!=='name'?'number':'text'} />
+    </div>)}
+    <p style={{fontSize:12,color:'#8888a0',marginBottom:16}}>
+      This will auto-generate {(form.floors||0)*(form.aptsPerFloor||0)||'N'} apartments.
+    </p>
+    {msg&&<div style={{color:'#a8e6cf',marginBottom:12,fontSize:13}}>{msg}</div>}
+    <button onClick={addTower} style={{...style.btn,background:'#6c5ce7',color:'white',width:'100%',padding:12}}>Add Tower & Generate Apartments</button>
+  </div>;
+
+  if(view==='newStaff') return <div style={{padding:24,maxWidth:520}}>
+    <button onClick={()=>setView('detail')} style={{...style.btn,background:'none',color:'#8888a0',marginBottom:16}}>← Back</button>
+    <h2 style={{marginBottom:4}}>Assign Staff</h2>
+    <p style={{color:'#8888a0',fontSize:13,marginBottom:20}}>to {selected?.name}</p>
+    <label style={style.label}>Name</label>
+    <input style={style.input} value={form.name||''} onChange={e=>s('name',e.target.value)} placeholder="Full name" />
+    <label style={style.label}>Phone *</label>
+    <input style={style.input} value={form.phone||''} onChange={e=>s('phone',e.target.value)} placeholder="10-digit phone (login credential)" />
+    <label style={style.label}>Role *</label>
+    <select style={{...style.input}} value={form.role||''} onChange={e=>s('role',e.target.value)}>
+      <option value="">Select role</option>
+      <option value="admin">Admin</option>
+      <option value="guard">Guard</option>
+    </select>
+    {msg&&<div style={{color:'#a8e6cf',marginBottom:12,fontSize:13}}>{msg}</div>}
+    <button onClick={assignStaff} style={{...style.btn,background:'#6c5ce7',color:'white',width:'100%',padding:12}}>Assign Staff Member</button>
+  </div>;
+
+  if(view==='detail' && selected) return <div style={{padding:24}}>
+    <button onClick={()=>setView('list')} style={{...style.btn,background:'none',color:'#8888a0',marginBottom:16}}>← All Societies</button>
+    <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:20}}>
+      <div><h2 style={{marginBottom:4}}>{selected.name}</h2>
+        <p style={{color:'#8888a0',fontSize:13}}>{[selected.address,selected.city,selected.state,selected.pincode].filter(Boolean).join(', ')||'No address'}</p></div>
+      <button onClick={()=>deleteSociety(selected.id)} style={{...style.btn,background:'rgba(231,76,60,.15)',color:'#e74c3c'}}>Delete Society</button>
+    </div>
+    <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12,marginBottom:24}}>
+      {[['Residents',selected.resident_count||0,'#a8e6cf'],['Admins',selected.admin_count||0,'#c9b1ff'],['Guards',selected.guard_count||0,'#ffd3a5']].map(([l,v,c])=>
+        <div key={l} style={{...style.card,textAlign:'center'}}><div style={{fontSize:28,fontWeight:700,color:c}}>{v}</div><div style={{fontSize:12,color:'#8888a0'}}>{l}</div></div>)}
+    </div>
+
+    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
+      <h3>Towers & Apartments</h3>
+      <button onClick={()=>{setForm({});setView('newTower');}} style={{...style.btn,background:'#6c5ce7',color:'white'}}>+ Add Tower</button>
+    </div>
+    {selected.towers?.length===0&&<p style={{color:'#8888a0',fontSize:13,marginBottom:20}}>No towers yet.</p>}
+    {selected.towers?.map(t=><div key={t.id} style={{...style.card,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+      <div><div style={{fontWeight:600}}>{t.name}</div>
+        <div style={{fontSize:12,color:'#8888a0'}}>{t.floors} floors · {t.apartment_count} apartments</div></div>
+      <button onClick={()=>deleteTower(t.id)} style={{...style.btn,background:'rgba(231,76,60,.1)',color:'#e74c3c',fontSize:11,padding:'5px 10px'}}>Remove</button>
+    </div>)}
+
+    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12,marginTop:8}}>
+      <h3>Staff</h3>
+      <button onClick={()=>{setForm({});setMsg('');setView('newStaff');}} style={{...style.btn,background:'#6c5ce7',color:'white'}}>+ Assign Staff</button>
+    </div>
+    {staff.length===0&&<p style={{color:'#8888a0',fontSize:13}}>No staff assigned.</p>}
+    {staff.map(m=><div key={m.role_id} style={{...style.card,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+      <div><div style={{fontWeight:600}}>{m.name||m.phone}</div>
+        <div style={{fontSize:12,color:'#8888a0'}}>{m.phone} · <span style={{color:m.role==='admin'?'#c9b1ff':'#ffd3a5'}}>{m.role}</span></div></div>
+      <button onClick={()=>removeStaff(m.role_id)} style={{...style.btn,background:'rgba(231,76,60,.1)',color:'#e74c3c',fontSize:11,padding:'5px 10px'}}>Remove</button>
+    </div>)}
+  </div>;
+
+  return <div style={{padding:24}}>
+    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:20}}>
+      <h2>All Societies</h2>
+      <button onClick={()=>{setForm({});setMsg('');setView('newSociety');}} style={{...style.btn,background:'#6c5ce7',color:'white'}}>+ New Society</button>
+    </div>
+    {msg&&<div style={{color:'#a8e6cf',marginBottom:12,fontSize:13,padding:'10px 14px',background:'rgba(168,230,207,.1)',borderRadius:8}}>{msg}</div>}
+    {societies.length===0&&<p style={{color:'#8888a0'}}>No societies yet.</p>}
+    {societies.map(s=><div key={s.id} style={{...style.card,cursor:'pointer'}} onClick={()=>selectSociety(s)}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+        <div><div style={{fontWeight:600,fontSize:16,marginBottom:4}}>{s.name}</div>
+          <div style={{fontSize:12,color:'#8888a0'}}>{[s.city,s.state].filter(Boolean).join(', ')||'No location'}</div></div>
+        <div style={{textAlign:'right',fontSize:12,color:'#8888a0'}}>
+          <div>{s.towers?.length||0} towers</div>
+          <div>{s.resident_count||0} residents</div>
+        </div>
+      </div>
+      <div style={{display:'flex',gap:8,marginTop:10}}>
+        <span style={{fontSize:11,padding:'2px 8px',borderRadius:12,background:'rgba(108,92,231,.2)',color:'#c9b1ff'}}>{s.admin_count} admins</span>
+        <span style={{fontSize:11,padding:'2px 8px',borderRadius:12,background:'rgba(253,203,110,.1)',color:'#ffd3a5'}}>{s.guard_count} guards</span>
+      </div>
+    </div>)}
+  </div>;
 }
 
 ReactDOM.render(<App/>, document.getElementById('root'));
