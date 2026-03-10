@@ -162,18 +162,24 @@ function Residents() {
 }
 
 function Spaces() {
-  const [spaces,setSpaces]=useState([]);const [modal,setModal]=useState(false);
+  const [spaces,setSpaces]=useState([]);const [modal,setModal]=useState(false);const [editing,setEditing]=useState(null);
   const load=()=>api('/api/admin/spaces').then(setSpaces);
   useEffect(()=>{load();},[]);
-  const add=d=>{api('/api/admin/spaces',{method:'POST',body:JSON.stringify(d)}).then(()=>{load();setModal(false);});};
+  const openAdd=()=>{setEditing(null);setModal(true);};
+  const openEdit=s=>{setEditing(s);setModal(true);};
+  const save=d=>{
+    if(editing) api(`/api/admin/spaces/${editing.id}`,{method:'PUT',body:JSON.stringify(d)}).then(()=>{load();setModal(false);setEditing(null);});
+    else api('/api/admin/spaces',{method:'POST',body:JSON.stringify(d)}).then(()=>{load();setModal(false);});
+  };
   const del=id=>{if(confirm('Delete?'))api(`/api/admin/spaces/${id}`,{method:'DELETE'}).then(load);};
-  return <div><div className="top-bar"><h2>Spaces</h2><button className="btn btn-primary" onClick={()=>setModal(true)}>+ Add Space</button></div>
+  const fields=[{k:'name',l:'Name'},{k:'description',l:'Description'},{k:'spaceType',l:'Type',type:'select',opts:['common_room','work_area','gym','pool','party_hall','guest_room','other']},{k:'capacity',l:'Capacity',type:'number'},{k:'costPerHour',l:'Cost/Hour',type:'number'},{k:'availableFrom',l:'Open',type:'time'},{k:'availableTo',l:'Close',type:'time'},{k:'isShared',l:'Shared workspace?',type:'select',opts:['false','true']},{k:'totalSpots',l:'Total Spots',type:'number'}];
+  const editDefaults=editing?{name:editing.name,description:editing.description,spaceType:editing.space_type,capacity:editing.capacity,costPerHour:editing.cost_per_hour,availableFrom:editing.available_from,availableTo:editing.available_to,isShared:editing.is_shared?'true':'false',totalSpots:editing.total_spots}:null;
+  return <div><div className="top-bar"><h2>Spaces</h2><button className="btn btn-primary" onClick={openAdd}>+ Add Space</button></div>
     <div className="card"><table className="table"><thead><tr><th>Name</th><th>Type</th><th>Capacity</th><th>Cost/hr</th><th>Hours</th><th>Shared</th><th>Actions</th></tr></thead><tbody>
       {spaces.map(s=><tr key={s.id}><td><b>{s.name}</b><br/><span style={{fontSize:11,color:'var(--text2)'}}>{s.description}</span></td><td>{s.space_type}</td><td>{s.capacity}</td><td style={{fontFamily:'Space Mono'}}>Rs.{s.cost_per_hour}</td><td>{s.available_from}-{s.available_to}</td><td>{s.is_shared?`Yes (${s.total_spots} spots)`:'No'}</td>
-        <td><button className="btn btn-sm btn-red" onClick={()=>del(s.id)}>Delete</button></td></tr>)}
+        <td><div className="flex"><button className="btn btn-sm" style={{background:'var(--accent)',color:'white'}} onClick={()=>openEdit(s)}>Edit</button><button className="btn btn-sm btn-red" onClick={()=>del(s.id)}>Delete</button></div></td></tr>)}
     </tbody></table></div>
-    {modal&&<Modal title="Add Space" onClose={()=>setModal(false)} onSubmit={add}
-      fields={[{k:'name',l:'Name'},{k:'description',l:'Description'},{k:'spaceType',l:'Type',type:'select',opts:['common_room','work_area','gym','pool','party_hall','guest_room','other']},{k:'capacity',l:'Capacity',type:'number'},{k:'costPerHour',l:'Cost/Hour',type:'number'},{k:'availableFrom',l:'Open',type:'time'},{k:'availableTo',l:'Close',type:'time'},{k:'isShared',l:'Shared workspace?',type:'select',opts:['false','true']},{k:'totalSpots',l:'Total Spots',type:'number'}]}/>}
+    {modal&&<Modal title={editing?'Edit Space':'Add Space'} onClose={()=>{setModal(false);setEditing(null);}} onSubmit={save} fields={fields} defaults={editDefaults}/>}
   </div>;
 }
 
@@ -254,8 +260,8 @@ function DocReqs() {
   </div>;
 }
 
-function Modal({title,onClose,onSubmit,fields}) {
-  const [data,setData]=useState({});
+function Modal({title,onClose,onSubmit,fields,defaults}) {
+  const [data,setData]=useState(defaults||{});
   const set=(k,v)=>setData(d=>({...d,[k]:v}));
   return <div className="modal-overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
     <h3>{title}</h3>
