@@ -91,14 +91,14 @@ function App() {
   if(!token) return <LoginPage onLogin={handleLogin}/>;
 
   const isSuperAdmin = ctx?.roles?.some(r=>r.role==='super_admin');
-  const pages = {dashboard:<Dashboard/>,residents:<Residents/>,spaces:<Spaces/>,bookings:<Bookings/>,approvals:<Approvals/>,daily_help:<DailyHelp/>,documents:<Documents/>,doc_reqs:<DocReqs/>,news:<NewsAdmin/>,guards:<Guards/>,societies:<Societies token={token}/>};
+  const pages = {dashboard:<Dashboard/>,residents:<Residents/>,spaces:<Spaces/>,bookings:<Bookings/>,approvals:<Approvals/>,daily_help:<DailyHelp/>,documents:<Documents/>,doc_reqs:<DocReqs/>,news:<NewsAdmin/>,banners:<BannersAdmin/>,ads:<AdsAdmin/>,guards:<Guards/>,societies:<Societies token={token}/>};
 
   return <div className="layout">
     <div className="sidebar">
       <h1 style={{padding:'16px 20px 16px'}}>Admin Console</h1>
       <div className="society-name"><span>{ctx?.society?.name||'No Society'}</span>{ctx?.society?.city}</div>
       <nav>
-        {[['dashboard','Dashboard'],['residents','Residents'],['spaces','Spaces'],['bookings','Bookings'],['approvals','Approvals'],['daily_help','Daily Help'],['documents','Documents'],['doc_reqs','Doc Requirements'],['news','📰 News'],['guards','🛡 Guards']].map(([k,l])=>
+        {[['dashboard','Dashboard'],['residents','Residents'],['spaces','Spaces'],['bookings','Bookings'],['approvals','Approvals'],['daily_help','Daily Help'],['documents','Documents'],['doc_reqs','Doc Requirements'],['news','📰 News'],['banners','📢 Banners'],['ads','🏷 Ads'],['guards','🛡 Guards']].map(([k,l])=>
           <button key={k} className={page===k?'active':''} onClick={()=>setPage(k)}>{l}</button>
         )}
         {isSuperAdmin&&<button className={page==='societies'?'active':''} onClick={()=>setPage('societies')} style={{borderTop:'1px solid #2d2d3d',marginTop:8,paddingTop:16}}>⚙ Manage Societies</button>}
@@ -568,6 +568,164 @@ function Societies({token}) {
         <span style={{fontSize:11,padding:'2px 8px',borderRadius:12,background:'rgba(253,203,110,.1)',color:'#ffd3a5'}}>{s.guard_count} guards</span>
       </div>
     </div>)}
+  </div>;
+}
+
+
+// ─── Banners Admin ────────────────────────────────────────────────────────────
+function BannersAdmin() {
+  const [banners,setBanners]=useState([]);
+  const [modal,setModal]=useState(null); // null | 'add' | banner object
+  const [form,setForm]=useState({});
+  const [err,setErr]=useState('');
+  const load=()=>api('/api/admin/banners').then(setBanners);
+  useEffect(()=>{load();},[]);
+
+  const openAdd=()=>{setForm({bgColor:'#6c5ce7',isActive:true,sortOrder:0});setErr('');setModal('add');};
+  const openEdit=b=>{setForm({...b,bgColor:b.bg_color,imageUrl:b.image_url,ctaText:b.cta_text,ctaUrl:b.cta_url,sortOrder:b.sort_order,isActive:!!b.is_active,expiresAt:b.expires_at||''});setErr('');setModal(b);};
+  const save=()=>{
+    const method=modal==='add'?'POST':'PUT';
+    const url=modal==='add'?'/api/admin/banners':`/api/admin/banners/${modal.id}`;
+    api(url,{method,body:JSON.stringify(form)}).then(d=>{if(d.error)return setErr(d.error);load();setModal(null);});
+  };
+  const del=id=>{if(confirm('Delete this banner?'))api(`/api/admin/banners/${id}`,{method:'DELETE'}).then(load);};
+  const toggle=b=>api(`/api/admin/banners/${b.id}`,{method:'PUT',body:JSON.stringify({...b,bgColor:b.bg_color,imageUrl:b.image_url,ctaText:b.cta_text,ctaUrl:b.cta_url,sortOrder:b.sort_order,isActive:!b.is_active})}).then(load);
+
+  const F=({l,k,type='text',placeholder})=><div className="form-group" style={{marginBottom:10}}>
+    <label style={{fontSize:12,color:'var(--text2)',fontWeight:600,display:'block',marginBottom:4}}>{l}</label>
+    <input className="input" style={{width:'100%'}} type={type} placeholder={placeholder} value={form[k]||''} onChange={e=>setForm(f=>({...f,[k]:e.target.value}))}/>
+  </div>;
+
+  return <div>
+    <div className="top-bar"><h2>📢 Society Banners</h2><button className="btn btn-primary" onClick={openAdd}>+ Add Banner</button></div>
+    <p style={{fontSize:13,color:'var(--text2)',margin:'0 0 16px'}}>Banners appear at the top of every resident's home screen. Use them for announcements, events, or emergency notices.</p>
+
+    {!banners.length && <div className="card"><div className="empty">No banners yet</div></div>}
+    {banners.map(b=><div key={b.id} className="card" style={{marginBottom:12}}>
+      {/* Preview */}
+      <div style={{borderRadius:14,padding:'16px 18px',marginBottom:12,
+          background:b.image_url?`linear-gradient(135deg,rgba(0,0,0,0.5),rgba(0,0,0,0.2)),url(${b.image_url}) center/cover`:(b.bg_color||'#6c5ce7'),
+          display:'flex',alignItems:'center',gap:12,minHeight:70}}>
+        <div style={{flex:1}}>
+          {b.title&&<div style={{fontWeight:700,color:'white',fontSize:15}}>{b.title}</div>}
+          {b.body&&<div style={{color:'rgba(255,255,255,0.8)',fontSize:12,marginTop:2}}>{b.body}</div>}
+        </div>
+        {b.cta_text&&<div style={{background:'rgba(255,255,255,0.2)',borderRadius:8,padding:'6px 12px',color:'white',fontSize:12,fontWeight:700,whiteSpace:'nowrap'}}>{b.cta_text}</div>}
+      </div>
+      <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+        <span className={`badge badge-${b.is_active?'green':'red'}`}>{b.is_active?'Active':'Inactive'}</span>
+        {b.expires_at&&<span style={{fontSize:11,color:'var(--text2)'}}>Expires {b.expires_at.slice(0,10)}</span>}
+        <span style={{fontSize:11,color:'var(--text2)'}}>Order: {b.sort_order}</span>
+        <div style={{marginLeft:'auto',display:'flex',gap:8}}>
+          <button className="btn btn-sm" style={{background:b.is_active?'var(--card2)':'var(--green)',color:'white',border:'none'}} onClick={()=>toggle(b)}>{b.is_active?'Deactivate':'Activate'}</button>
+          <button className="btn btn-sm" style={{background:'var(--accent)',color:'white',border:'none'}} onClick={()=>openEdit(b)}>Edit</button>
+          <button className="btn btn-sm btn-red" onClick={()=>del(b.id)}>Delete</button>
+        </div>
+      </div>
+    </div>)}
+
+    {modal&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000,padding:20}}>
+      <div style={{background:'var(--card)',borderRadius:16,padding:28,width:'100%',maxWidth:480,maxHeight:'90vh',overflowY:'auto',border:'1px solid var(--border)'}}>
+        <h3 style={{marginBottom:16}}>{modal==='add'?'Add Banner':'Edit Banner'}</h3>
+        <F l="Title" k="title" placeholder="e.g. Annual Day – Save the Date!"/>
+        <F l="Body text" k="body" placeholder="Join us on 15th March at the clubhouse"/>
+        <F l="Background color" k="bgColor" type="color"/>
+        <F l="Background image URL (optional)" k="imageUrl" placeholder="https://..."/>
+        <F l="CTA button text" k="ctaText" placeholder="Learn More"/>
+        <F l="CTA link URL" k="ctaUrl" placeholder="https://..."/>
+        <F l="Sort order (lower = first)" k="sortOrder" type="number"/>
+        <F l="Expires at (optional)" k="expiresAt" type="datetime-local"/>
+        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:14}}>
+          <input type="checkbox" id="bannerActive" checked={!!form.isActive} onChange={e=>setForm(f=>({...f,isActive:e.target.checked}))}/>
+          <label htmlFor="bannerActive" style={{fontSize:13}}>Active (visible to residents)</label>
+        </div>
+        {err&&<p style={{color:'var(--red)',fontSize:13,marginBottom:10}}>{err}</p>}
+        <div style={{display:'flex',gap:10}}>
+          <button className="btn btn-primary" onClick={save}>Save Banner</button>
+          <button className="btn" style={{background:'var(--card2)',border:'1px solid var(--border)'}} onClick={()=>setModal(null)}>Cancel</button>
+        </div>
+      </div>
+    </div>}
+  </div>;
+}
+
+// ─── Ads Admin ────────────────────────────────────────────────────────────────
+function AdsAdmin() {
+  const [ads,setAds]=useState([]);
+  const [modal,setModal]=useState(null);
+  const [form,setForm]=useState({});
+  const [err,setErr]=useState('');
+  const load=()=>api('/api/admin/ads').then(setAds);
+  useEffect(()=>{load();},[]);
+
+  const openAdd=()=>{setForm({bgColor:'#1a1a2e',isActive:true,sortOrder:0});setErr('');setModal('add');};
+  const openEdit=a=>{setForm({...a,bgColor:a.bg_color,imageUrl:a.image_url,ctaText:a.cta_text,ctaUrl:a.cta_url,sortOrder:a.sort_order,isActive:!!a.is_active,expiresAt:a.expires_at||''});setErr('');setModal(a);};
+  const save=()=>{
+    if(!form.headline) return setErr('Headline is required');
+    const method=modal==='add'?'POST':'PUT';
+    const url=modal==='add'?'/api/admin/ads':`/api/admin/ads/${modal.id}`;
+    api(url,{method,body:JSON.stringify(form)}).then(d=>{if(d.error)return setErr(d.error);load();setModal(null);});
+  };
+  const del=id=>{if(confirm('Delete this ad?'))api(`/api/admin/ads/${id}`,{method:'DELETE'}).then(load);};
+  const toggle=a=>api(`/api/admin/ads/${a.id}`,{method:'PUT',body:JSON.stringify({...a,bgColor:a.bg_color,imageUrl:a.image_url,ctaText:a.cta_text,ctaUrl:a.cta_url,sortOrder:a.sort_order,isActive:!a.is_active})}).then(load);
+
+  const F=({l,k,type='text',placeholder})=><div className="form-group" style={{marginBottom:10}}>
+    <label style={{fontSize:12,color:'var(--text2)',fontWeight:600,display:'block',marginBottom:4}}>{l}</label>
+    <input className="input" style={{width:'100%'}} type={type} placeholder={placeholder} value={form[k]||''} onChange={e=>setForm(f=>({...f,[k]:e.target.value}))}/>
+  </div>;
+
+  return <div>
+    <div className="top-bar"><h2>🏷 Advertisements</h2><button className="btn btn-primary" onClick={openAdd}>+ Add Ad</button></div>
+    <p style={{fontSize:13,color:'var(--text2)',margin:'0 0 16px'}}>Ads appear as a full-width tile in the resident home screen grid. Only the first active ad is shown.</p>
+
+    {!ads.length&&<div className="card"><div className="empty">No advertisements yet</div></div>}
+    {ads.map(a=><div key={a.id} className="card" style={{marginBottom:12}}>
+      {/* Preview */}
+      <div style={{borderRadius:14,padding:'16px 18px',marginBottom:12,position:'relative',overflow:'hidden',minHeight:80,
+          background:a.image_url
+            ?`linear-gradient(90deg,${a.bg_color||'#1a1a2e'} 0%,rgba(0,0,0,0.1) 100%),url(${a.image_url}) right center/cover no-repeat`
+            :`linear-gradient(135deg,${a.bg_color||'#1a1a2e'},#0a0a1a)`}}>
+        <div style={{position:'absolute',top:8,right:10,fontSize:9,fontWeight:700,color:'rgba(255,255,255,0.4)',letterSpacing:1}}>SPONSORED</div>
+        {a.advertiser&&<div style={{fontSize:10,color:'rgba(255,255,255,0.5)',fontWeight:600,marginBottom:3,letterSpacing:0.5,textTransform:'uppercase'}}>{a.advertiser}</div>}
+        <div style={{fontWeight:700,color:'white',fontSize:15,marginBottom:2}}>{a.headline}</div>
+        {a.subtext&&<div style={{color:'rgba(255,255,255,0.7)',fontSize:12}}>{a.subtext}</div>}
+        {a.cta_text&&<div style={{marginTop:8,display:'inline-flex',gap:5,background:'rgba(255,255,255,0.15)',borderRadius:8,padding:'5px 12px',color:'white',fontSize:12,fontWeight:700}}>{a.cta_text} →</div>}
+      </div>
+      <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+        <span className={`badge badge-${a.is_active?'green':'red'}`}>{a.is_active?'Active':'Inactive'}</span>
+        {a.expires_at&&<span style={{fontSize:11,color:'var(--text2)'}}>Expires {a.expires_at.slice(0,10)}</span>}
+        <span style={{fontSize:11,color:'var(--text2)'}}>Order: {a.sort_order}</span>
+        <div style={{marginLeft:'auto',display:'flex',gap:8}}>
+          <button className="btn btn-sm" style={{background:a.is_active?'var(--card2)':'var(--green)',color:'white',border:'none'}} onClick={()=>toggle(a)}>{a.is_active?'Deactivate':'Activate'}</button>
+          <button className="btn btn-sm" style={{background:'var(--accent)',color:'white',border:'none'}} onClick={()=>openEdit(a)}>Edit</button>
+          <button className="btn btn-sm btn-red" onClick={()=>del(a.id)}>Delete</button>
+        </div>
+      </div>
+    </div>)}
+
+    {modal&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000,padding:20}}>
+      <div style={{background:'var(--card)',borderRadius:16,padding:28,width:'100%',maxWidth:480,maxHeight:'90vh',overflowY:'auto',border:'1px solid var(--border)'}}>
+        <h3 style={{marginBottom:16}}>{modal==='add'?'Add Ad':'Edit Ad'}</h3>
+        <F l="Headline *" k="headline" placeholder="e.g. 20% off at Swiggy for residents"/>
+        <F l="Subtext" k="subtext" placeholder="Use code SOCIETY20 at checkout"/>
+        <F l="Advertiser / brand name" k="advertiser" placeholder="e.g. Swiggy"/>
+        <F l="Background color" k="bgColor" type="color"/>
+        <F l="Background image URL (optional)" k="imageUrl" placeholder="https://..."/>
+        <F l="CTA button text" k="ctaText" placeholder="Get Offer"/>
+        <F l="CTA link URL" k="ctaUrl" placeholder="https://..."/>
+        <F l="Sort order (lower = shown first)" k="sortOrder" type="number"/>
+        <F l="Expires at (optional)" k="expiresAt" type="datetime-local"/>
+        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:14}}>
+          <input type="checkbox" id="adActive" checked={!!form.isActive} onChange={e=>setForm(f=>({...f,isActive:e.target.checked}))}/>
+          <label htmlFor="adActive" style={{fontSize:13}}>Active (visible to residents)</label>
+        </div>
+        {err&&<p style={{color:'var(--red)',fontSize:13,marginBottom:10}}>{err}</p>}
+        <div style={{display:'flex',gap:10}}>
+          <button className="btn btn-primary" onClick={save}>Save Ad</button>
+          <button className="btn" style={{background:'var(--card2)',border:'1px solid var(--border)'}} onClick={()=>setModal(null)}>Cancel</button>
+        </div>
+      </div>
+    </div>}
   </div>;
 }
 

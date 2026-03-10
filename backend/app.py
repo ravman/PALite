@@ -738,6 +738,105 @@ def admin_verify_doc(did): get_db().execute("UPDATE documents SET status='verifi
 def admin_reject_doc(did): get_db().execute("UPDATE documents SET status='rejected' WHERE id=? AND society_id=?",(did,g.soc)); get_db().commit(); return jsonify({'success':True})
 
 # ==================== GUARD ENDPOINTS ====================
+# ─── Banners & Ads (resident-facing) ─────────────────────────────────────────
+@app.route('/api/home/banners')
+@auth_required
+def home_banners():
+    if not g.soc: return jsonify([])
+    rows = drs(get_db().execute(
+        "SELECT * FROM society_banners WHERE society_id=? AND is_active=1 "
+        "AND (expires_at IS NULL OR expires_at > datetime('now')) "
+        "ORDER BY sort_order ASC, created_at DESC", (g.soc,)).fetchall())
+    return jsonify(rows)
+
+@app.route('/api/home/ads')
+@auth_required
+def home_ads():
+    if not g.soc: return jsonify([])
+    rows = drs(get_db().execute(
+        "SELECT * FROM advertisements WHERE society_id=? AND is_active=1 "
+        "AND (expires_at IS NULL OR expires_at > datetime('now')) "
+        "ORDER BY sort_order ASC, created_at DESC", (g.soc,)).fetchall())
+    return jsonify(rows)
+
+# ─── Admin: Banners ────────────────────────────────────────────────────────────
+@app.route('/api/admin/banners')
+@admin_required
+def admin_list_banners():
+    return jsonify(drs(get_db().execute(
+        "SELECT * FROM society_banners WHERE society_id=? ORDER BY sort_order ASC, created_at DESC", (g.soc,)).fetchall()))
+
+@app.route('/api/admin/banners', methods=['POST'])
+@admin_required
+def admin_add_banner():
+    d = request.json; db = get_db()
+    bid = uid('ban-')
+    db.execute("INSERT INTO society_banners VALUES(?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)",
+               (bid, g.soc, d.get('title'), d.get('body'), d.get('imageUrl'),
+                d.get('bgColor','#6c5ce7'), d.get('ctaText'), d.get('ctaUrl'),
+                1 if d.get('isActive', True) else 0,
+                int(d.get('sortOrder', 0)), d.get('expiresAt')))
+    db.commit()
+    return jsonify({'success': True, 'id': bid})
+
+@app.route('/api/admin/banners/<bid>', methods=['PUT'])
+@admin_required
+def admin_update_banner(bid):
+    d = request.json; db = get_db()
+    db.execute("UPDATE society_banners SET title=?,body=?,image_url=?,bg_color=?,cta_text=?,cta_url=?,is_active=?,sort_order=?,expires_at=? WHERE id=? AND society_id=?",
+               (d.get('title'), d.get('body'), d.get('imageUrl'), d.get('bgColor','#6c5ce7'),
+                d.get('ctaText'), d.get('ctaUrl'), 1 if d.get('isActive', True) else 0,
+                int(d.get('sortOrder', 0)), d.get('expiresAt'), bid, g.soc))
+    db.commit()
+    return jsonify({'success': True})
+
+@app.route('/api/admin/banners/<bid>', methods=['DELETE'])
+@admin_required
+def admin_del_banner(bid):
+    get_db().execute("DELETE FROM society_banners WHERE id=? AND society_id=?", (bid, g.soc))
+    get_db().commit()
+    return jsonify({'success': True})
+
+# ─── Admin: Advertisements ────────────────────────────────────────────────────
+@app.route('/api/admin/ads')
+@admin_required
+def admin_list_ads():
+    return jsonify(drs(get_db().execute(
+        "SELECT * FROM advertisements WHERE society_id=? ORDER BY sort_order ASC, created_at DESC", (g.soc,)).fetchall()))
+
+@app.route('/api/admin/ads', methods=['POST'])
+@admin_required
+def admin_add_ad():
+    d = request.json; db = get_db()
+    if not d.get('headline'): return jsonify({'error': 'headline required'}), 400
+    aid = uid('ad-')
+    db.execute("INSERT INTO advertisements VALUES(?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)",
+               (aid, g.soc, d['headline'], d.get('subtext'), d.get('imageUrl'),
+                d.get('bgColor','#1a1a2e'), d.get('ctaText'), d.get('ctaUrl'),
+                d.get('advertiser'), 1 if d.get('isActive', True) else 0,
+                int(d.get('sortOrder', 0)), d.get('expiresAt')))
+    db.commit()
+    return jsonify({'success': True, 'id': aid})
+
+@app.route('/api/admin/ads/<aid>', methods=['PUT'])
+@admin_required
+def admin_update_ad(aid):
+    d = request.json; db = get_db()
+    db.execute("UPDATE advertisements SET headline=?,subtext=?,image_url=?,bg_color=?,cta_text=?,cta_url=?,advertiser=?,is_active=?,sort_order=?,expires_at=? WHERE id=? AND society_id=?",
+               (d.get('headline'), d.get('subtext'), d.get('imageUrl'), d.get('bgColor','#1a1a2e'),
+                d.get('ctaText'), d.get('ctaUrl'), d.get('advertiser'),
+                1 if d.get('isActive', True) else 0, int(d.get('sortOrder', 0)),
+                d.get('expiresAt'), aid, g.soc))
+    db.commit()
+    return jsonify({'success': True})
+
+@app.route('/api/admin/ads/<aid>', methods=['DELETE'])
+@admin_required
+def admin_del_ad(aid):
+    get_db().execute("DELETE FROM advertisements WHERE id=? AND society_id=?", (aid, g.soc))
+    get_db().commit()
+    return jsonify({'success': True})
+
 # ─── Society News ──────────────────────────────────────────────────────────────
 import json as _json
 
