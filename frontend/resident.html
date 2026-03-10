@@ -1158,11 +1158,18 @@ function VisitorsPage({ctx,setPage,prefill}) {
     setModal(false);
   });};
 
-  const createMove = d=>{api('/api/move-requests',{method:'POST',body:JSON.stringify(d)}).then(()=>{api('/api/move-requests/my').then(setMoves);setModal(false);});};
+  const createMove = (details, docs) => {
+    const docList = Object.entries(docs).map(([type, v]) => ({ type, fileName: v.fileName, data: v.data }));
+    api('/api/move-requests', { method: 'POST', body: JSON.stringify({ ...details, documents: docList }) })
+      .then(() => { api('/api/move-requests/my').then(setMoves); setModal(false); });
+  };
 
   return <div>
     <PageHeader title="Visitors & Moves" onBack={()=>setPage('home')}/>
-    <div className="tab-bar"><button className={`tab ${tab==='my'?'active':''}`} onClick={()=>setTab('my')}>Invitations</button><button className={`tab ${tab==='moves'?'active':''}`} onClick={()=>setTab('moves')}>Move Requests</button></div>
+    <div className="tab-bar">
+      <button className={`tab ${tab==='my'?'active':''}`} onClick={()=>setTab('my')}>Invitations</button>
+      <button className={`tab ${tab==='moves'?'active':''}`} onClick={()=>setTab('moves')}>Move Requests</button>
+    </div>
 
     {tab==='my' && <>
       <button className="btn btn-primary mb-4" style={{width:'100%'}} onClick={()=>setModal('invite')}>+ Create Invitation</button>
@@ -1179,17 +1186,172 @@ function VisitorsPage({ctx,setPage,prefill}) {
 
     {tab==='moves' && <>
       <button className="btn btn-primary mb-4" style={{width:'100%'}} onClick={()=>setModal('move')}>+ Request Move In/Out</button>
-      {moves.map(m=><div key={m.id} className="card"><div className="flex-between"><div><div className="card-title">{m.move_type==='move_in'?'Move In':'Move Out'}</div><div className="card-sub">{m.tentative_start} to {m.tentative_end}</div></div><span className={`badge badge-${m.status==='approved'?'green':m.status==='pending'?'orange':'red'}`}>{m.status}</span></div></div>)}
+      {moves.map(m=><div key={m.id} className="card">
+        <div className="flex-between">
+          <div>
+            <div className="card-title">{m.move_type==='move_in'?'📦 Move In':'🚚 Move Out'}</div>
+            <div className="card-sub">{m.tentative_start} → {m.tentative_end}</div>
+          </div>
+          <span className={`badge badge-${m.status==='approved'?'green':m.status==='pending'?'orange':'red'}`}>{m.status}</span>
+        </div>
+        {m.status==='rejected' && m.rejection_reason &&
+          <div style={{marginTop:10,padding:'10px 12px',background:'rgba(248,81,73,.1)',borderRadius:10,border:'1px solid rgba(248,81,73,.25)'}}>
+            <span style={{fontSize:11,fontWeight:700,color:'#f85149',display:'block',marginBottom:2}}>Reason</span>
+            <span style={{fontSize:13,color:'#f85149'}}>{m.rejection_reason}</span>
+          </div>}
+        {m.documents && m.documents.length > 0 &&
+          <div style={{marginTop:10,display:'flex',flexWrap:'wrap',gap:6}}>
+            {m.documents.map(d=><span key={d.id} style={{fontSize:11,padding:'3px 9px',borderRadius:8,background:'var(--card2)',border:'1px solid var(--border)',color:`${d.status==='verified'?'var(--green)':'var(--text2)'}`}}>
+              {d.doc_type.replace(/_/g,' ')} {d.status==='verified'?'✓':''}
+            </span>)}
+          </div>}
+      </div>)}
       {!moves.length && <div className="empty">No move requests</div>}
     </>}
 
     {qrInvite && <InviteQRModal invite={qrInvite} onClose={()=>setQrInvite(null)}/>}
     {modal==='invite' && <FormModal title="Create Invitation" onClose={()=>setModal(false)} onSubmit={createInvite} initialData={invitePrefill}
       fields={[{key:'visitorName',label:'Visitor Name'},{key:'visitorPhone',label:'Phone'},{key:'visitorType',label:'Type',type:'select',options:['guest','cab','delivery','daily_help','other']},{key:'purpose',label:'Purpose'},{key:'validFrom',label:'Valid From',type:'datetime-local'},{key:'validTo',label:'Valid To',type:'datetime-local'}]}/>}
-    {modal==='move' && <FormModal title="Move Request" onClose={()=>setModal(false)} onSubmit={createMove}
-      fields={[{key:'moveType',label:'Type',type:'select',options:['move_in','move_out']},{key:'tentativeStart',label:'Start Date',type:'date'},{key:'tentativeEnd',label:'End Date',type:'date'},{key:'notes',label:'Notes'}]}/>}
+    {modal==='move' && <MoveRequestModal ctx={ctx} onClose={()=>setModal(false)} onSubmit={createMove}/>}
   </div>;
 }
+
+// ─── Move Request Modal (two-step: details → documents) ───────────────────────
+function MoveRequestModal({ ctx, onClose, onSubmit }) {
+  const [step, setStep]       = useState('details');  // details | docs
+  const [details, setDetails] = useState({ moveType:'move_in', tentativeStart:'', tentativeEnd:'', notes:'' });
+  const [docReqs, setDocReqs] = useState([]);
+  const [docs, setDocs]       = useState({});
+  const [err, setErr]         = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  // Fetch doc requirements whenever moveType changes
+  useEffect(() => {
+    if (!ctx?.society?.id || !details.moveType) return;
+    setDocs({});
+    fetch(`/api/public/move-doc-requirements?societyId=${ctx.society.id}&moveType=${details.moveType}`)
+      .then(r => r.json()).then(setDocReqs);
+  }, [details.moveType, ctx?.society?.id]);
+
+  const goToDocs = () => {
+    if (!details.tentativeStart) return setErr('Please select a start date');
+    if (!details.tentativeEnd)   return setErr('Please select an end date');
+    setErr('');
+    setStep('docs');
+  };
+
+  const handleFile = (docType, file) => {
+    const reader = new FileReader();
+    reader.onload = e => setDocs(d => ({ ...d, [docType]: { fileName: file.name, data: e.target.result } }));
+    reader.readAsDataURL(file);
+  };
+
+  const submit = () => {
+    const missing = docReqs.filter(r => r.is_mandatory && !docs[r.doc_type]);
+    if (missing.length) return setErr(`Please upload: ${missing.map(r => r.doc_type.replace(/_/g,' ')).join(', ')}`);
+    setSubmitting(true);
+    onSubmit(details, docs);
+  };
+
+  const moveLabel = details.moveType === 'move_in' ? '📦 Move In' : '🚚 Move Out';
+
+  return <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',display:'flex',alignItems:'flex-end',zIndex:200}} onClick={e=>e.target===e.currentTarget&&onClose()}>
+    <div style={{background:'var(--card)',borderRadius:'20px 20px 0 0',padding:24,width:'100%',maxHeight:'90vh',overflowY:'auto'}}>
+
+      {/* Header */}
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:20}}>
+        <div style={{display:'flex',alignItems:'center',gap:10}}>
+          {step==='docs' && <button onClick={()=>{setStep('details');setErr('');}}
+            style={{background:'none',border:'none',color:'var(--text2)',cursor:'pointer',fontSize:20,lineHeight:1,padding:0}}>←</button>}
+          <h3 style={{margin:0}}>Move Request</h3>
+        </div>
+        <button onClick={onClose} style={{background:'none',border:'none',color:'var(--text2)',cursor:'pointer',fontSize:22,lineHeight:1,padding:0}}>×</button>
+      </div>
+
+      {/* Progress */}
+      <div style={{display:'flex',gap:6,marginBottom:20}}>
+        {['Details','Documents'].map((s,i)=><div key={s} style={{flex:1,height:3,borderRadius:2,background:(step==='details'?i===0:true)?'var(--accent)':'var(--border)'}}/>)}
+      </div>
+
+      {step==='details' && <>
+        {/* Move type toggle */}
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:16}}>
+          {[{v:'move_in',label:'📦 Move In'},{v:'move_out',label:'🚚 Move Out'}].map(t=>
+            <button key={t.v} onClick={()=>setDetails(d=>({...d,moveType:t.v}))}
+              style={{padding:'12px 0',borderRadius:12,border:`2px solid ${details.moveType===t.v?'var(--accent)':'var(--border)'}`,
+                background:details.moveType===t.v?'rgba(108,92,231,.15)':'var(--card2)',
+                cursor:'pointer',color:'var(--text)',fontWeight:700,fontSize:14,fontFamily:'inherit'}}>
+              {t.label}
+            </button>)}
+        </div>
+
+        <div style={{display:'flex',flexDirection:'column',gap:12}}>
+          <div className="form-group">
+            <label className="label">Start Date *</label>
+            <input className="input" type="date" value={details.tentativeStart}
+              onChange={e=>setDetails(d=>({...d,tentativeStart:e.target.value}))}/>
+          </div>
+          <div className="form-group">
+            <label className="label">End Date *</label>
+            <input className="input" type="date" value={details.tentativeEnd}
+              onChange={e=>setDetails(d=>({...d,tentativeEnd:e.target.value}))}/>
+          </div>
+          <div className="form-group">
+            <label className="label">Notes</label>
+            <input className="input" placeholder="e.g. Large furniture, need lift access" value={details.notes}
+              onChange={e=>setDetails(d=>({...d,notes:e.target.value}))}/>
+          </div>
+        </div>
+
+        {err && <p style={{color:'var(--red)',fontSize:13,margin:'12px 0 0'}}>{err}</p>}
+        <button className="btn btn-primary" style={{width:'100%',marginTop:20,padding:14}} onClick={goToDocs}>
+          Next: Upload Documents →
+        </button>
+      </>}
+
+      {step==='docs' && <>
+        <div style={{marginBottom:16,padding:'10px 14px',background:'rgba(108,92,231,.1)',borderRadius:12,fontSize:13,color:'var(--accent)'}}>
+          {moveLabel} · {details.tentativeStart} → {details.tentativeEnd}
+        </div>
+
+        {docReqs.length === 0
+          ? <div style={{padding:'20px 0',color:'var(--text2)',fontSize:13,textAlign:'center'}}>
+              No documents required for this move type. You can submit directly.
+            </div>
+          : <div style={{display:'flex',flexDirection:'column',gap:12}}>
+              {docReqs.map(req => {
+                const uploaded = docs[req.doc_type];
+                const label = req.doc_type.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+                return <div key={req.doc_type} style={{background:'var(--card2)',borderRadius:14,padding:16,
+                    border:`1px solid ${uploaded?'var(--accent)':'var(--border)'}`}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+                    <div>
+                      <span style={{fontSize:13,fontWeight:700,color:'var(--text)'}}>{label}</span>
+                      {req.is_mandatory && <span style={{fontSize:10,color:'var(--red)',marginLeft:6,fontWeight:700}}>REQUIRED</span>}
+                    </div>
+                    {uploaded && <span style={{fontSize:11,color:'var(--accent)',fontWeight:600}}>✓</span>}
+                  </div>
+                  {uploaded && <div style={{fontSize:11,color:'var(--text2)',marginBottom:8,wordBreak:'break-all'}}>{uploaded.fileName}</div>}
+                  <label>
+                    <div style={{padding:'8px 12px',borderRadius:9,border:'1px solid var(--border)',fontSize:12,
+                        color:'var(--text2)',cursor:'pointer',textAlign:'center',background:'var(--card)'}}>
+                      {uploaded ? '↺ Replace' : '📎 Upload PDF / Image'}
+                    </div>
+                    <input type="file" accept="image/*,.pdf" style={{display:'none'}}
+                      onChange={e=>e.target.files[0]&&handleFile(req.doc_type,e.target.files[0])}/>
+                  </label>
+                </div>;
+              })}
+            </div>}
+
+        {err && <p style={{color:'var(--red)',fontSize:13,margin:'12px 0 0'}}>{err}</p>}
+        <button className="btn btn-primary" style={{width:'100%',marginTop:20,padding:14}} onClick={submit} disabled={submitting}>
+          {submitting ? 'Submitting…' : 'Submit Request'}
+        </button>
+      </>}
+    </div>
+  </div>;
+
 
 function MarketplacePage({setPage, prefill}) {
   const [posts, setPosts] = useState([]);

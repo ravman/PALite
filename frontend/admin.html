@@ -229,22 +229,106 @@ function Bookings() {
 }
 
 function Approvals() {
-  const [moves,setMoves]=useState([]);const [leases,setLeases]=useState([]);const [tab,setTab]=useState('moves');
+  const [moves,setMoves]=useState([]);
+  const [leases,setLeases]=useState([]);
+  const [tab,setTab]=useState('moves');
+  const [rejectTarget,setRejectTarget]=useState(null); // {id,name,label}
+  const [rejectReason,setRejectReason]=useState('');
+  const [rejectErr,setRejectErr]=useState('');
+  const [docsTarget,setDocsTarget]=useState(null); // move object to show docs for
+
   const loadM=()=>api('/api/admin/move-requests').then(setMoves);
   const loadL=()=>api('/api/admin/lease-extensions').then(setLeases);
   useEffect(()=>{loadM();loadL();},[]);
-  return <div><div className="top-bar"><h2>Approvals</h2></div>
-    <div className="tab-bar"><button className={`tab ${tab==='moves'?'active':''}`} onClick={()=>setTab('moves')}>Move Requests</button><button className={`tab ${tab==='leases'?'active':''}`} onClick={()=>setTab('leases')}>Lease Extensions</button></div>
-    {tab==='moves'&&<div className="card"><table className="table"><thead><tr><th>Name</th><th>Apartment</th><th>Type</th><th>Dates</th><th>Status</th><th>Actions</th></tr></thead><tbody>
-      {moves.map(m=><tr key={m.id}><td>{m.name}</td><td>{m.unit_number} - {m.tower_name}</td><td><span className={`badge badge-${m.move_type==='move_in'?'green':'red'}`}>{m.move_type}</span></td><td>{m.tentative_start} to {m.tentative_end}</td>
-        <td><span className={`badge badge-${m.status==='approved'?'green':m.status==='pending'?'orange':'red'}`}>{m.status}</span></td>
-        <td>{m.status==='pending'&&<div className="flex"><button className="btn btn-sm btn-green" onClick={()=>api(`/api/admin/move-requests/${m.id}/approve`,{method:'POST'}).then(loadM)}>Approve</button><button className="btn btn-sm btn-red" onClick={()=>api(`/api/admin/move-requests/${m.id}/reject`,{method:'POST'}).then(loadM)}>Reject</button></div>}</td></tr>)}
-    </tbody></table>{!moves.length&&<div className="empty">No move requests</div>}</div>}
+
+  const openReject=(m)=>{setRejectTarget({id:m.id,name:m.name,label:m.move_type==='move_in'?'Move In':'Move Out'});setRejectReason('');setRejectErr('');};
+  const submitReject=()=>{
+    if(!rejectReason.trim()) return setRejectErr('Please provide a reason');
+    api(`/api/admin/move-requests/${rejectTarget.id}/reject`,{method:'POST',body:JSON.stringify({reason:rejectReason})})
+      .then(d=>{if(d.error) return setRejectErr(d.error); setRejectTarget(null); loadM();});
+  };
+  const verifyDoc=(mid,did)=>api(`/api/admin/move-requests/${mid}/documents/${did}/verify`,{method:'POST'}).then(loadM);
+
+  return <div>
+    <div className="top-bar"><h2>Approvals</h2></div>
+    <div className="tab-bar">
+      <button className={`tab ${tab==='moves'?'active':''}`} onClick={()=>setTab('moves')}>Move Requests</button>
+      <button className={`tab ${tab==='leases'?'active':''}`} onClick={()=>setTab('leases')}>Lease Extensions</button>
+    </div>
+
+    {tab==='moves'&&<div className="card">
+      <table className="table"><thead><tr><th>Name</th><th>Apartment</th><th>Type</th><th>Dates</th><th>Docs</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+        {moves.map(m=><tr key={m.id}>
+          <td>{m.name}<br/><span style={{fontSize:11,color:'var(--text2)'}}>{m.phone}</span></td>
+          <td>{m.unit_number} · {m.tower_name}</td>
+          <td><span className={`badge badge-${m.move_type==='move_in'?'green':'red'}`}>{m.move_type}</span></td>
+          <td style={{fontSize:12}}>{m.tentative_start}<br/>→ {m.tentative_end}</td>
+          <td>
+            {m.documents&&m.documents.length>0
+              ? <button className="btn btn-sm" style={{fontSize:11}} onClick={()=>setDocsTarget(m)}>
+                  View {m.documents.length} doc{m.documents.length>1?'s':''}
+                </button>
+              : <span style={{fontSize:11,color:'var(--text2)'}}>None</span>}
+          </td>
+          <td>
+            <span className={`badge badge-${m.status==='approved'?'green':m.status==='pending'?'orange':'red'}`}>{m.status}</span>
+            {m.status==='rejected'&&m.rejection_reason&&<div style={{fontSize:11,color:'var(--text2)',marginTop:3,maxWidth:140}}>↳ {m.rejection_reason}</div>}
+          </td>
+          <td>{m.status==='pending'&&<div className="flex">
+            <button className="btn btn-sm btn-green" onClick={()=>api(`/api/admin/move-requests/${m.id}/approve`,{method:'POST'}).then(loadM)}>Approve</button>
+            <button className="btn btn-sm btn-red" onClick={()=>openReject(m)}>Reject</button>
+          </div>}</td>
+        </tr>)}
+      </tbody></table>
+      {!moves.length&&<div className="empty">No move requests</div>}
+    </div>}
+
     {tab==='leases'&&<div className="card"><table className="table"><thead><tr><th>Name</th><th>Apartment</th><th>Current End</th><th>Requested End</th><th>Status</th><th>Actions</th></tr></thead><tbody>
       {leases.map(l=><tr key={l.id}><td>{l.name}</td><td>{l.unit_number} - {l.tower_name}</td><td>{l.current_end}</td><td>{l.requested_end}</td>
         <td><span className={`badge badge-${l.status==='approved'?'green':l.status==='pending'?'orange':'red'}`}>{l.status}</span></td>
         <td>{l.status==='pending'&&<div className="flex"><button className="btn btn-sm btn-green" onClick={()=>api(`/api/admin/lease-extensions/${l.id}/approve`,{method:'POST'}).then(loadL)}>Approve</button><button className="btn btn-sm btn-red" onClick={()=>api(`/api/admin/lease-extensions/${l.id}/reject`,{method:'POST'}).then(loadL)}>Reject</button></div>}</td></tr>)}
     </tbody></table>{!leases.length&&<div className="empty">No lease extensions</div>}</div>}
+
+    {/* Reject modal */}
+    {rejectTarget&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000}}>
+      <div style={{background:'var(--card)',borderRadius:16,padding:28,width:420,border:'1px solid var(--border)'}}>
+        <h3 style={{marginBottom:4}}>Reject {rejectTarget.label}</h3>
+        <p style={{fontSize:13,color:'var(--text2)',marginBottom:16}}>Rejecting request from <strong>{rejectTarget.name}</strong>. The reason will be shown to them.</p>
+        <label className="label">Reason *</label>
+        <textarea className="input" rows={3} value={rejectReason} onChange={e=>setRejectReason(e.target.value)}
+          placeholder="e.g. Missing NOC from previous society." style={{resize:'vertical',marginBottom:12,width:'100%'}}/>
+        {rejectErr&&<p style={{color:'var(--red)',fontSize:13,marginBottom:10}}>{rejectErr}</p>}
+        <div style={{display:'flex',gap:10}}>
+          <button className="btn btn-sm" style={{background:'var(--red)',color:'white',border:'none'}} onClick={submitReject}>Confirm Reject</button>
+          <button className="btn btn-sm" style={{background:'var(--card2)',border:'1px solid var(--border)',color:'var(--text)'}} onClick={()=>setRejectTarget(null)}>Cancel</button>
+        </div>
+      </div>
+    </div>}
+
+    {/* Document viewer */}
+    {docsTarget&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.8)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000,padding:20}}>
+      <div style={{background:'var(--card)',borderRadius:16,padding:24,width:'100%',maxWidth:560,maxHeight:'85vh',overflowY:'auto',border:'1px solid var(--border)'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+          <h3 style={{margin:0}}>Documents — {docsTarget.name}</h3>
+          <button onClick={()=>setDocsTarget(null)} style={{background:'none',border:'none',color:'var(--text2)',cursor:'pointer',fontSize:22}}>×</button>
+        </div>
+        <div style={{display:'flex',flexDirection:'column',gap:12}}>
+          {docsTarget.documents.map(d=><div key={d.id} style={{background:'var(--card2)',borderRadius:12,padding:16,border:`1px solid ${d.status==='verified'?'var(--green)':'var(--border)'}`}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+              <div>
+                <span style={{fontWeight:700,fontSize:13}}>{d.doc_type.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())}</span>
+                <span style={{fontSize:11,color:'var(--text2)',marginLeft:8}}>{d.file_name}</span>
+              </div>
+              <span className={`badge badge-${d.status==='verified'?'green':'orange'}`}>{d.status}</span>
+            </div>
+            {d.data&&(d.data.startsWith('data:image')?
+              <img src={d.data} style={{width:'100%',borderRadius:8,maxHeight:200,objectFit:'contain',background:'#000'}} alt={d.doc_type}/>:
+              <div style={{fontSize:12,color:'var(--text2)',padding:8,background:'var(--card)',borderRadius:8}}>PDF document — <a href={d.data} download={d.file_name} style={{color:'var(--accent)'}}>Download</a></div>)}
+            {d.status!=='verified'&&<button className="btn btn-sm btn-green" style={{marginTop:8}} onClick={()=>verifyDoc(docsTarget.id,d.id)}>✓ Mark Verified</button>}
+          </div>)}
+        </div>
+      </div>
+    </div>}
   </div>;
 }
 
@@ -279,18 +363,37 @@ function Documents() {
 }
 
 function DocReqs() {
+  const [tab,setTab]=useState('signup');
   const [reqs,setReqs]=useState([]);const [modal,setModal]=useState(false);
   const load=()=>api('/api/admin/document-requirements').then(setReqs);
   useEffect(()=>{load();},[]);
   const add=d=>{api('/api/admin/document-requirements',{method:'POST',body:JSON.stringify({...d,isMandatory:true})}).then(()=>{load();setModal(false);});};
   const del=id=>api(`/api/admin/document-requirements/${id}`,{method:'DELETE'}).then(load);
-  return <div><div className="top-bar"><h2>Document Requirements</h2><button className="btn btn-primary" onClick={()=>setModal(true)}>+ Add</button></div>
-    <div className="card"><table className="table"><thead><tr><th>Resident Type</th><th>Document Type</th><th>Mandatory</th><th>Actions</th></tr></thead><tbody>
-      {reqs.map(r=><tr key={r.id}><td><span className="badge badge-blue">{r.resident_type}</span></td><td>{r.doc_type}</td><td>{r.is_mandatory?'Yes':'No'}</td>
+  const [moveReqs,setMoveReqs]=useState([]);const [moveModal,setMoveModal]=useState(false);
+  const loadM=()=>api('/api/admin/move-doc-requirements').then(setMoveReqs);
+  useEffect(()=>{loadM();},[]);
+  const addM=d=>{api('/api/admin/move-doc-requirements',{method:'POST',body:JSON.stringify({...d,isMandatory:true})}).then(()=>{loadM();setMoveModal(false);});};
+  const delM=id=>api(`/api/admin/move-doc-requirements/${id}`,{method:'DELETE'}).then(loadM);
+  return <div>
+    <div className="top-bar"><h2>Document Requirements</h2>
+      <button className="btn btn-primary" onClick={()=>tab==='signup'?setModal(true):setMoveModal(true)}>+ Add</button>
+    </div>
+    <div className="tab-bar">
+      <button className={`tab ${tab==='signup'?'active':''}`} onClick={()=>setTab('signup')}>Signup / Residency</button>
+      <button className={`tab ${tab==='move'?'active':''}`} onClick={()=>setTab('move')}>Move In / Out</button>
+    </div>
+    {tab==='signup'&&<div className="card"><table className="table"><thead><tr><th>Resident Type</th><th>Document Type</th><th>Mandatory</th><th>Actions</th></tr></thead><tbody>
+      {reqs.map(r=><tr key={r.id}><td><span className="badge badge-blue">{r.resident_type.replace(/_/g,' ')}</span></td><td>{r.doc_type.replace(/_/g,' ')}</td><td>{r.is_mandatory?'Yes':'No'}</td>
         <td><button className="btn btn-sm btn-red" onClick={()=>del(r.id)}>Remove</button></td></tr>)}
-    </tbody></table></div>
-    {modal&&<Modal title="Add Requirement" onClose={()=>setModal(false)} onSubmit={add}
+    </tbody></table>{!reqs.length&&<div className="empty">No signup requirements configured</div>}</div>}
+    {tab==='move'&&<div className="card"><table className="table"><thead><tr><th>Move Type</th><th>Document Type</th><th>Mandatory</th><th>Actions</th></tr></thead><tbody>
+      {moveReqs.map(r=><tr key={r.id}><td><span className={`badge badge-${r.move_type==='move_in'?'green':'red'}`}>{r.move_type.replace('_',' ')}</span></td><td>{r.doc_type.replace(/_/g,' ')}</td><td>{r.is_mandatory?'Yes':'No'}</td>
+        <td><button className="btn btn-sm btn-red" onClick={()=>delM(r.id)}>Remove</button></td></tr>)}
+    </tbody></table>{!moveReqs.length&&<div className="empty">No move requirements configured</div>}</div>}
+    {modal&&<Modal title="Add Signup Requirement" onClose={()=>setModal(false)} onSubmit={add}
       fields={[{k:'residentType',l:'Resident Type',type:'select',opts:['owner','owner_family','tenant','tenant_family']},{k:'docType',l:'Document Type',type:'select',opts:['property_papers','government_id','rent_agreement','address_proof','noc','photo','other']}]}/>}
+    {moveModal&&<Modal title="Add Move Requirement" onClose={()=>setMoveModal(false)} onSubmit={addM}
+      fields={[{k:'moveType',l:'Move Type',type:'select',opts:['move_in','move_out']},{k:'docType',l:'Document Type',type:'select',opts:['government_id','address_proof','noc','property_papers','rent_agreement','photo','other']}]}/>}
   </div>;
 }
 

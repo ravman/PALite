@@ -415,12 +415,33 @@ def public_doc_reqs():
 def create_move():
     d = request.json; db = get_db(); mid = uid('mv-')
     if not g.apt: return jsonify({'error':'No active apartment'}), 400
-    db.execute('INSERT INTO move_requests VALUES(?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)',(mid,g.user['id'],g.apt,g.soc,d.get('moveType'),d.get('tentativeStart'),d.get('tentativeEnd'),'pending',d.get('notes'))); db.commit()
+    db.execute('INSERT INTO move_requests VALUES(?,?,?,?,?,?,?,?,?,NULL,CURRENT_TIMESTAMP)',
+               (mid,g.user['id'],g.apt,g.soc,d.get('moveType'),d.get('tentativeStart'),d.get('tentativeEnd'),'pending',d.get('notes')))
+    # Save documents submitted with the request
+    for doc in d.get('documents',[]):
+        db.execute('INSERT INTO move_documents VALUES(?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)',
+                   (uid('mvd-'), mid, g.user['id'], g.soc, doc.get('type'), doc.get('fileName'), doc.get('data'), 'pending'))
+    db.commit()
     return jsonify({'success':True,'id':mid})
 
 @app.route('/api/move-requests/my')
 @auth_required
-def my_moves(): return jsonify(drs(get_db().execute('SELECT * FROM move_requests WHERE user_id=? AND society_id=? ORDER BY created_at DESC',(g.user['id'],g.soc or '')).fetchall()))
+def my_moves():
+    db = get_db()
+    moves = drs(db.execute('SELECT * FROM move_requests WHERE user_id=? AND society_id=? ORDER BY created_at DESC',(g.user['id'],g.soc or '')).fetchall())
+    for m in moves:
+        m['documents'] = drs(db.execute('SELECT id,doc_type,file_name,status FROM move_documents WHERE move_request_id=?',(m['id'],)).fetchall())
+    return jsonify(moves)
+
+@app.route('/api/public/move-doc-requirements')
+def public_move_doc_reqs():
+    """No auth — used in the move request form to show required docs."""
+    soc_id   = request.args.get('societyId')
+    move_type = request.args.get('moveType')
+    if not soc_id or not move_type: return jsonify([])
+    return jsonify(drs(get_db().execute(
+        'SELECT * FROM move_doc_requirements WHERE society_id=? AND move_type=?',
+        (soc_id, move_type)).fetchall()))
 
 @app.route('/api/lease/extend', methods=['POST'])
 @auth_required
@@ -558,15 +579,83 @@ def admin_bookings():
 @app.route('/api/admin/move-requests')
 @admin_required
 def admin_moves():
-    return jsonify(drs(get_db().execute("SELECT mr.*, u.name, u.phone, a.unit_number, t.name as tower_name FROM move_requests mr JOIN users u ON mr.user_id=u.id JOIN apartments a ON mr.apartment_id=a.id JOIN towers t ON a.tower_id=t.id WHERE mr.society_id=? ORDER BY mr.created_at DESC",(g.soc,)).fetchall()))
+    db = get_db()
+    moves = drs(db.execute(
+        "SELECT mr.*, u.name, u.phone, a.unit_number, t.name as tower_name "
+        "FROM move_requests mr JOIN users u ON mr.user_id=u.id "
+        "JOIN apartments a ON mr.apartment_id=a.id JOIN towers t ON a.tower_id=t.id "
+        "WHERE mr.society_id=? ORDER BY mr.created_at DESC", (g.soc,)).fetchall())
+    for m in moves:
+        m['documents'] = drs(db.execute(
+            'SELECT id, doc_type, file_name, status, data FROM move_documents WHERE move_request_id=?',
+            (m['id'],)).fetchall())
+    return jsonify(moves)
 
 @app.route('/api/admin/move-requests/<mid>/approve', methods=['POST'])
 @admin_required
-def admin_approve_move(mid): get_db().execute("UPDATE move_requests SET status='approved' WHERE id=? AND society_id=?",(mid,g.soc)); get_db().commit(); return jsonify({'success':True})
+def admin_approve_move(mid):
+    db = get_db()
+    mv = dr(db.execute("SELECT * FROM move_requests WHERE id=? AND society_id=?", (mid, g.soc)).fetchone())
+    if not mv: return jsonify({'error':'Not found'}), 404
+    db.execute("UPDATE move_requests SET status='approved', rejection_reason=NULL WHERE id=?", (mid,))
+    db.commit()
+    from push import _get_tokens_for_user, send_push
+    label = 'Move In' if mv.get('move_type') == 'move_in' else 'Move Out'
+    send_push(_get_tokens_for_user(db, mv['user_id']),
+              f'✅ {label} Approved',
+              f'Your {label.lower()} request has been approved.',
+              {'type': 'move_approved', 'screen': 'Visitors'})
+    return jsonify({'success': True})
 
 @app.route('/api/admin/move-requests/<mid>/reject', methods=['POST'])
 @admin_required
-def admin_reject_move(mid): get_db().execute("UPDATE move_requests SET status='rejected' WHERE id=? AND society_id=?",(mid,g.soc)); get_db().commit(); return jsonify({'success':True})
+def admin_reject_move(mid):
+    d = request.json or {}
+    reason = (d.get('reason') or '').strip()
+    if not reason: return jsonify({'error': 'Rejection reason is required'}), 400
+    db = get_db()
+    mv = dr(db.execute("SELECT * FROM move_requests WHERE id=? AND society_id=?", (mid, g.soc)).fetchone())
+    if not mv: return jsonify({'error':'Not found'}), 404
+    db.execute("UPDATE move_requests SET status='rejected', rejection_reason=? WHERE id=?", (reason, mid))
+    db.commit()
+    from push import _get_tokens_for_user, send_push
+    label = 'Move In' if mv.get('move_type') == 'move_in' else 'Move Out'
+    send_push(_get_tokens_for_user(db, mv['user_id']),
+              f'❌ {label} Not Approved', f'Reason: {reason}',
+              {'type': 'move_rejected', 'reason': reason, 'screen': 'Visitors'})
+    return jsonify({'success': True})
+
+@app.route('/api/admin/move-requests/<mid>/documents/<did>/verify', methods=['POST'])
+@admin_required
+def admin_verify_move_doc(mid, did):
+    get_db().execute("UPDATE move_documents SET status='verified' WHERE id=? AND society_id=?", (did, g.soc))
+    get_db().commit()
+    return jsonify({'success': True})
+
+# ─── Move Doc Requirements ────────────────────────────────────────────────────
+@app.route('/api/admin/move-doc-requirements')
+@admin_required
+def admin_move_doc_reqs():
+    return jsonify(drs(get_db().execute(
+        'SELECT * FROM move_doc_requirements WHERE society_id=? ORDER BY move_type, doc_type', (g.soc,)).fetchall()))
+
+@app.route('/api/admin/move-doc-requirements', methods=['POST'])
+@admin_required
+def admin_add_move_doc_req():
+    d = request.json; db = get_db()
+    if not d.get('moveType') or not d.get('docType'): return jsonify({'error':'moveType and docType required'}), 400
+    did = uid('mdr-')
+    db.execute('INSERT INTO move_doc_requirements VALUES(?,?,?,?,?,CURRENT_TIMESTAMP)',
+               (did, g.soc, d['moveType'], d['docType'], 1 if d.get('isMandatory', True) else 0))
+    db.commit()
+    return jsonify({'success': True, 'id': did})
+
+@app.route('/api/admin/move-doc-requirements/<did>', methods=['DELETE'])
+@admin_required
+def admin_del_move_doc_req(did):
+    get_db().execute('DELETE FROM move_doc_requirements WHERE id=? AND society_id=?', (did, g.soc))
+    get_db().commit()
+    return jsonify({'success': True})
 
 @app.route('/api/admin/lease-extensions')
 @admin_required

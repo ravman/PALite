@@ -22,7 +22,9 @@ CREATE TABLE IF NOT EXISTS delivery_apartments (id TEXT PRIMARY KEY, entry_id TE
 CREATE TABLE IF NOT EXISTS push_tokens (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, token TEXT NOT NULL UNIQUE, platform TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS society_news (id TEXT PRIMARY KEY, society_id TEXT NOT NULL, author_id TEXT NOT NULL, title TEXT NOT NULL, body TEXT, images TEXT, is_pinned INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS marketplace_posts (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, society_id TEXT NOT NULL, post_type TEXT, title TEXT NOT NULL, description TEXT, price REAL, images TEXT, status TEXT DEFAULT 'active', created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
-CREATE TABLE IF NOT EXISTS move_requests (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, apartment_id TEXT NOT NULL, society_id TEXT NOT NULL, move_type TEXT, tentative_start DATE, tentative_end DATE, status TEXT DEFAULT 'pending', notes TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS move_doc_requirements (id TEXT PRIMARY KEY, society_id TEXT NOT NULL, move_type TEXT NOT NULL, doc_type TEXT NOT NULL, is_mandatory INTEGER DEFAULT 1, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS move_documents (id TEXT PRIMARY KEY, move_request_id TEXT NOT NULL, user_id TEXT NOT NULL, society_id TEXT NOT NULL, doc_type TEXT NOT NULL, file_name TEXT, data TEXT, status TEXT DEFAULT 'pending', created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS move_requests (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, apartment_id TEXT NOT NULL, society_id TEXT NOT NULL, move_type TEXT, tentative_start DATE, tentative_end DATE, status TEXT DEFAULT 'pending', notes TEXT, rejection_reason TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS lease_extensions (id TEXT PRIMARY KEY, resident_id TEXT NOT NULL, society_id TEXT NOT NULL, current_end DATE, requested_end DATE, status TEXT DEFAULT 'pending', notes TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS daily_help (id TEXT PRIMARY KEY, society_id TEXT NOT NULL, name TEXT NOT NULL, phone TEXT, help_type TEXT, id_code TEXT, qr_code TEXT, photo TEXT, status TEXT DEFAULT 'pending', created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS daily_help_apartments (id TEXT PRIMARY KEY, daily_help_id TEXT NOT NULL, apartment_id TEXT NOT NULL, days_of_week TEXT DEFAULT 'mon,tue,wed,thu,fri,sat', time_slot TEXT);
@@ -44,6 +46,11 @@ def init_db():
     res_cols = [r[1] for r in cur2.fetchall()]
     if 'rejection_reason' not in res_cols:
         conn.execute("ALTER TABLE residents ADD COLUMN rejection_reason TEXT")
+    # move_requests migration
+    cur3 = conn.execute("PRAGMA table_info(move_requests)")
+    mr_cols = [r[1] for r in cur3.fetchall()]
+    if 'rejection_reason' not in mr_cols:
+        conn.execute("ALTER TABLE move_requests ADD COLUMN rejection_reason TEXT")
     conn.commit(); conn.close()
 def get_conn():
     conn = sqlite3.connect(DB_PATH); conn.row_factory = sqlite3.Row; conn.execute('PRAGMA foreign_keys = ON'); return conn

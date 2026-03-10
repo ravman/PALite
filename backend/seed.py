@@ -68,7 +68,21 @@ c.execute("INSERT INTO visitor_invitations VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,CURR
 for did,si,rt,dt in [('dreq-001',s1,'owner','property_papers'),('dreq-002',s1,'owner','government_id'),('dreq-003',s1,'tenant','rent_agreement'),('dreq-004',s1,'tenant','government_id'),('dreq-005',s1,'owner_family','government_id'),('dreq-006',s1,'tenant_family','government_id'),('dreq-007',s2,'owner','property_papers'),('dreq-008',s2,'owner','government_id'),('dreq-009',s2,'tenant','rent_agreement'),('dreq-010',s2,'tenant','government_id'),('dreq-011',s2,'owner_family','government_id'),('dreq-012',s2,'tenant_family','government_id')]:
     c.execute("INSERT INTO document_requirements VALUES(?,?,?,?,?,CURRENT_TIMESTAMP)", (did,si,rt,dt,1))
 
+for did,si,mt,dt in [
+    ('mdreq-001',s1,'move_in','government_id'),('mdreq-002',s1,'move_in','address_proof'),
+    ('mdreq-003',s1,'move_out','noc'),
+    ('mdreq-004',s2,'move_in','government_id'),('mdreq-005',s2,'move_in','address_proof'),
+    ('mdreq-006',s2,'move_out','noc')]:
+    c.execute("INSERT INTO move_doc_requirements VALUES(?,?,?,?,?,CURRENT_TIMESTAMP)", (did,si,mt,dt,1))
+
 c.execute("INSERT INTO daily_help VALUES(?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)", ('dh-001',s1,'Lakshmi','9111122222','maid','DH-001','QR-DH-001',None,'approved'))
+for did,si,mt,dt in [
+    ('mdreq-001',s1,'move_in','government_id'),('mdreq-002',s1,'move_in','address_proof'),
+    ('mdreq-003',s1,'move_out','noc'),
+    ('mdreq-004',s2,'move_in','government_id'),('mdreq-005',s2,'move_in','address_proof'),
+    ('mdreq-006',s2,'move_out','noc')]:
+    c.execute("INSERT INTO move_doc_requirements VALUES(?,?,?,?,?,CURRENT_TIMESTAMP)", (did,si,mt,dt,1))
+
 c.execute("INSERT INTO daily_help VALUES(?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)", ('dh-002',s1,'Ramu','9111133333','cook','DH-002','QR-DH-002',None,'pending'))
 c.execute("INSERT INTO daily_help_apartments VALUES(?,?,?,?,?)", ('dha-001','dh-001','apt-A101','mon,tue,wed,thu,fri,sat','08:00-10:00'))
 c.execute("INSERT INTO daily_help_apartments VALUES(?,?,?,?,?)", ('dha-002','dh-001','apt-A102','mon,wed,fri','10:00-11:00'))
