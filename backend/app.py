@@ -4,7 +4,8 @@ from flask import Flask, request, jsonify, send_from_directory, g
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from schema import init_db, get_conn, dr, drs, uid
 from push import (notify_visitor_arrived, notify_visitor_decision,
-                  notify_news_published, notify_booking_confirmed)
+                  notify_news_published, notify_booking_confirmed,
+                  notify_invoice_raised, notify_payment_received)
 
 app = Flask(__name__, static_folder='../frontend', static_url_path='')
 app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024
@@ -738,6 +739,244 @@ def admin_verify_doc(did): get_db().execute("UPDATE documents SET status='verifi
 def admin_reject_doc(did): get_db().execute("UPDATE documents SET status='rejected' WHERE id=? AND society_id=?",(did,g.soc)); get_db().commit(); return jsonify({'success':True})
 
 # ==================== GUARD ENDPOINTS ====================
+# ─── Resident: Invoices & Payments ───────────────────────────────────────────
+@app.route('/api/payments/invoices')
+@auth_required
+def my_invoices():
+    """All invoices for the current user in the current society."""
+    db = get_db()
+    # Direct invoices (booking-based or individually raised)
+    rows = drs(db.execute(
+        "SELECT i.*, p.id as payment_id, p.transaction_id, p.created_at as paid_at, p.amount as paid_amount "
+        "FROM invoices i "
+        "LEFT JOIN payments p ON p.invoice_id=i.id AND p.user_id=i.user_id "
+        "WHERE i.user_id=? AND i.society_id=? ORDER BY i.created_at DESC",
+        (g.user['id'], g.soc or '')).fetchall())
+    # Bulk invoices via invoice_residents
+    bulk = drs(db.execute(
+        "SELECT i.*, ir.status as ir_status, ir.paid_at, "
+        "p.id as payment_id, p.transaction_id, p.amount as paid_amount "
+        "FROM invoice_residents ir "
+        "JOIN invoices i ON ir.invoice_id=i.id "
+        "LEFT JOIN payments p ON p.invoice_id=i.id AND p.user_id=? "
+        "WHERE ir.user_id=? AND i.society_id=? ORDER BY i.created_at DESC",
+        (g.user['id'], g.user['id'], g.soc or '')).fetchall())
+    # Merge, deduplicate by id, bulk invoices use ir_status as effective status
+    seen = set()
+    merged = []
+    for inv in rows:
+        if inv['id'] not in seen:
+            seen.add(inv['id']); merged.append(inv)
+    for inv in bulk:
+        if inv['id'] not in seen:
+            inv['status'] = inv.get('ir_status') or inv['status']
+            seen.add(inv['id']); merged.append(inv)
+    merged.sort(key=lambda x: x['created_at'], reverse=True)
+    return jsonify(merged)
+
+@app.route('/api/payments/pay/<inv_id>', methods=['POST'])
+@auth_required
+def pay_invoice(inv_id):
+    """Pay a standalone or bulk invoice."""
+    db = get_db()
+    # Try direct invoice first
+    inv = dr(db.execute("SELECT * FROM invoices WHERE id=? AND society_id=?",
+                        (inv_id, g.soc)).fetchone())
+    if not inv: return jsonify({'error': 'Invoice not found'}), 404
+
+    # Determine if this is a bulk invoice (has invoice_residents row)
+    ir = dr(db.execute("SELECT * FROM invoice_residents WHERE invoice_id=? AND user_id=?",
+                       (inv_id, g.user['id'])).fetchone())
+
+    # Check already paid
+    already_paid = ir['status'] == 'paid' if ir else inv['status'] == 'paid'
+    if already_paid: return jsonify({'error': 'Already paid'}), 400
+
+    pay_id = uid('pay-'); txn = uid('TXN-').upper()
+    db.execute("INSERT INTO payments VALUES(?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)",
+               (pay_id, inv_id, g.user['id'], g.soc, inv['amount'], 'gateway', txn, 'success'))
+
+    if ir:
+        db.execute("UPDATE invoice_residents SET status='paid', paid_at=CURRENT_TIMESTAMP WHERE invoice_id=? AND user_id=?",
+                   (inv_id, g.user['id']))
+        # Mark invoice paid only if everyone has paid
+        unpaid = db.execute("SELECT COUNT(*) FROM invoice_residents WHERE invoice_id=? AND status='unpaid'",
+                            (inv_id,)).fetchone()[0]
+        if unpaid == 0:
+            db.execute("UPDATE invoices SET status='paid' WHERE id=?", (inv_id,))
+    else:
+        db.execute("UPDATE invoices SET status='paid' WHERE id=?", (inv_id,))
+
+    db.commit()
+    notify_payment_received(db, g.user['id'], inv.get('title') or inv.get('description','Invoice'),
+                            inv['amount'], pay_id)
+    return jsonify({'success': True, 'paymentId': pay_id, 'transactionId': txn})
+
+@app.route('/api/payments/receipt/<payment_id>')
+@auth_required
+def payment_receipt(payment_id):
+    db = get_db()
+    pay = dr(db.execute(
+        "SELECT p.*, i.title, i.description, i.invoice_type, i.amount as invoice_amount, "
+        "i.due_date, u.name as resident_name, u.phone, a.unit_number, t.name as tower_name, s.name as society_name "
+        "FROM payments p "
+        "JOIN invoices i ON p.invoice_id=i.id "
+        "JOIN users u ON p.user_id=u.id "
+        "JOIN residents r ON r.user_id=p.user_id AND r.society_id=p.society_id "
+        "JOIN apartments a ON r.apartment_id=a.id "
+        "JOIN towers t ON a.tower_id=t.id "
+        "JOIN societies s ON p.society_id=s.id "
+        "WHERE p.id=? AND p.user_id=?", (payment_id, g.user['id'])).fetchone())
+    if not pay: return jsonify({'error': 'Not found'}), 404
+    return jsonify(pay)
+
+# ─── Admin: Invoices & Payments ───────────────────────────────────────────────
+@app.route('/api/admin/invoices')
+@admin_required
+def admin_list_invoices():
+    db = get_db()
+    status = request.args.get('status')
+    sql = ("SELECT i.*, u.name as resident_name, u.phone, "
+           "a.unit_number, t.name as tower_name, "
+           "(SELECT COUNT(*) FROM invoice_residents WHERE invoice_id=i.id) as recipient_count, "
+           "(SELECT COUNT(*) FROM invoice_residents WHERE invoice_id=i.id AND status='paid') as paid_count "
+           "FROM invoices i "
+           "LEFT JOIN users u ON i.user_id=u.id "
+           "LEFT JOIN residents r ON r.user_id=i.user_id AND r.society_id=i.society_id "
+           "LEFT JOIN apartments a ON r.apartment_id=a.id "
+           "LEFT JOIN towers t ON a.tower_id=t.id "
+           "WHERE i.society_id=? AND i.invoice_type != 'booking'")
+    p = [g.soc]
+    if status: sql += ' AND i.status=?'; p.append(status)
+    sql += ' ORDER BY i.created_at DESC'
+    invoices = drs(db.execute(sql, p).fetchall())
+    return jsonify(invoices)
+
+@app.route('/api/admin/invoices/preview-recipients', methods=['POST'])
+@admin_required
+def preview_recipients():
+    """Preview who will receive the invoice before raising it."""
+    d = request.json; db = get_db()
+    target = d.get('target', 'all')   # 'all' | 'type' | 'apartment' | 'specific'
+    res_types = d.get('residentTypes', [])
+    apt_ids = d.get('apartmentIds', [])
+    user_ids = d.get('userIds', [])
+
+    sql = ("SELECT r.id as resident_id, r.resident_type, r.user_id, r.apartment_id, "
+           "u.name, u.phone, a.unit_number, t.name as tower_name "
+           "FROM residents r JOIN users u ON r.user_id=u.id "
+           "JOIN apartments a ON r.apartment_id=a.id "
+           "JOIN towers t ON a.tower_id=t.id "
+           "WHERE r.society_id=? AND r.status='approved'")
+    p = [g.soc]
+
+    if target == 'type' and res_types:
+        sql += f" AND r.resident_type IN ({','.join('?'*len(res_types))})"
+        p.extend(res_types)
+    elif target == 'apartment' and apt_ids:
+        sql += f" AND r.apartment_id IN ({','.join('?'*len(apt_ids))})"
+        p.extend(apt_ids)
+    elif target == 'specific' and user_ids:
+        sql += f" AND r.user_id IN ({','.join('?'*len(user_ids))})"
+        p.extend(user_ids)
+
+    return jsonify(drs(db.execute(sql, p).fetchall()))
+
+@app.route('/api/admin/invoices', methods=['POST'])
+@admin_required
+def admin_raise_invoice():
+    d = request.json; db = get_db()
+    if not d.get('title'):  return jsonify({'error': 'title required'}), 400
+    if not d.get('amount'): return jsonify({'error': 'amount required'}), 400
+
+    target = d.get('target', 'all')
+    res_types = d.get('residentTypes', [])
+    apt_ids = d.get('apartmentIds', [])
+    user_ids_explicit = d.get('userIds', [])
+
+    # Get recipients
+    sql = ("SELECT r.user_id, r.apartment_id FROM residents r "
+           "WHERE r.society_id=? AND r.status='approved'")
+    p = [g.soc]
+    if target == 'type' and res_types:
+        sql += f" AND r.resident_type IN ({','.join('?'*len(res_types))})"; p.extend(res_types)
+    elif target == 'apartment' and apt_ids:
+        sql += f" AND r.apartment_id IN ({','.join('?'*len(apt_ids))})"; p.extend(apt_ids)
+    elif target == 'specific' and user_ids_explicit:
+        sql += f" AND r.user_id IN ({','.join('?'*len(user_ids_explicit))})"; p.extend(user_ids_explicit)
+
+    recipients = drs(db.execute(sql, p).fetchall())
+    # Deduplicate by user_id (a user may have multiple residencies in the society)
+    seen_users = {}
+    for r in recipients:
+        if r['user_id'] not in seen_users:
+            seen_users[r['user_id']] = r['apartment_id']
+
+    if not seen_users: return jsonify({'error': 'No eligible residents found'}), 400
+
+    inv_id = uid('inv-')
+    amount = float(d['amount'])
+    # For single-recipient invoices keep user_id on invoice for backward compat
+    single_user = list(seen_users.keys())[0] if len(seen_users) == 1 else None
+
+    db.execute("INSERT INTO invoices VALUES(?,NULL,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)",
+               (inv_id, single_user, g.soc, amount,
+                d['title'], d.get('description'), d.get('invoiceType','maintenance'),
+                d.get('dueDate'), d.get('notes'), g.user['id'], 'unpaid'))
+
+    for uid_r, apt_id in seen_users.items():
+        db.execute("INSERT INTO invoice_residents VALUES(?,?,?,?,?,NULL,CURRENT_TIMESTAMP)",
+                   (uid('ir-'), inv_id, uid_r, apt_id, 'unpaid'))
+
+    db.commit()
+
+    # Push notifications
+    for uid_r in seen_users:
+        notify_invoice_raised(db, uid_r, d['title'], amount, d.get('dueDate'), inv_id)
+
+    return jsonify({'success': True, 'invoiceId': inv_id, 'recipientCount': len(seen_users)})
+
+@app.route('/api/admin/invoices/<inv_id>', methods=['DELETE'])
+@admin_required
+def admin_cancel_invoice(inv_id):
+    db = get_db()
+    inv = dr(db.execute("SELECT * FROM invoices WHERE id=? AND society_id=?", (inv_id, g.soc)).fetchone())
+    if not inv: return jsonify({'error': 'Not found'}), 404
+    if inv['status'] == 'paid': return jsonify({'error': 'Cannot cancel a paid invoice'}), 400
+    db.execute("UPDATE invoices SET status='cancelled' WHERE id=?", (inv_id,))
+    db.execute("UPDATE invoice_residents SET status='cancelled' WHERE invoice_id=?", (inv_id,))
+    db.commit()
+    return jsonify({'success': True})
+
+@app.route('/api/admin/invoices/<inv_id>/recipients')
+@admin_required
+def admin_invoice_recipients(inv_id):
+    db = get_db()
+    rows = drs(db.execute(
+        "SELECT ir.*, u.name, u.phone, a.unit_number, t.name as tower_name, r.resident_type "
+        "FROM invoice_residents ir "
+        "JOIN users u ON ir.user_id=u.id "
+        "JOIN apartments a ON ir.apartment_id=a.id "
+        "JOIN towers t ON a.tower_id=t.id "
+        "JOIN residents r ON r.user_id=ir.user_id AND r.apartment_id=ir.apartment_id "
+        "WHERE ir.invoice_id=? ORDER BY a.unit_number", (inv_id,)).fetchall())
+    return jsonify(rows)
+
+@app.route('/api/admin/payments')
+@admin_required
+def admin_payments():
+    db = get_db()
+    rows = drs(db.execute(
+        "SELECT p.*, i.title, i.invoice_type, u.name as resident_name, u.phone, "
+        "a.unit_number, t.name as tower_name "
+        "FROM payments p JOIN invoices i ON p.invoice_id=i.id "
+        "JOIN users u ON p.user_id=u.id "
+        "JOIN residents r ON r.user_id=p.user_id AND r.society_id=p.society_id "
+        "JOIN apartments a ON r.apartment_id=a.id "
+        "JOIN towers t ON a.tower_id=t.id "
+        "WHERE p.society_id=? ORDER BY p.created_at DESC", (g.soc,)).fetchall())
+    return jsonify(rows)
+
 # ─── Banners & Ads (resident-facing) ─────────────────────────────────────────
 @app.route('/api/home/banners')
 @auth_required

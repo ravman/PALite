@@ -422,7 +422,7 @@ function App() {
     if(resident && (resident.status==='pending' || resident.status==='rejected')) {
       content = <PendingScreen resident={resident} user={user} onLogout={handleLogout} onRefresh={loadMe}/>;
     } else {
-      const pages = {home:<HomePage ctx={ctx} setPage={setPage}/>,profile:<ProfilePage ctx={ctx} user={user} onLogout={handleLogout} switchApt={switchApt} reload={loadMe} setPage={setPage}/>,bookings:<BookingsPage setPage={setPage} prefill={voiceAction?.page==='bookings'?voiceAction.prefill:null}/>,visitors:<VisitorsPage ctx={ctx} setPage={setPage} prefill={voiceAction?.page==='visitors'?voiceAction.prefill:null}/>,marketplace:<MarketplacePage setPage={setPage} prefill={voiceAction?.page==='marketplace'?voiceAction.prefill:null}/>,locks:<LocksPage setPage={setPage}/>,news:<NewsPage setPage={setPage}/>};
+      const pages = {home:<HomePage ctx={ctx} setPage={setPage}/>,profile:<ProfilePage ctx={ctx} user={user} onLogout={handleLogout} switchApt={switchApt} reload={loadMe} setPage={setPage}/>,bookings:<BookingsPage setPage={setPage} prefill={voiceAction?.page==='bookings'?voiceAction.prefill:null}/>,visitors:<VisitorsPage ctx={ctx} setPage={setPage} prefill={voiceAction?.page==='visitors'?voiceAction.prefill:null}/>,marketplace:<MarketplacePage setPage={setPage} prefill={voiceAction?.page==='marketplace'?voiceAction.prefill:null}/>,payments:<PaymentsPage setPage={setPage}/>,locks:<LocksPage setPage={setPage}/>,news:<NewsPage setPage={setPage}/>};
       content = <div className="app">
         {voiceOpen && <VoiceAssistant
           onNavigate={(page, prefill)=>{setPage(page); setVoiceAction({page, prefill: prefill||{}}); setTimeout(()=>setVoiceAction(null), 5000);}}
@@ -431,9 +431,9 @@ function App() {
     <div className="nav">
       <div className="nav-inner">
         <div className="nav-pill">
-          <button className={`nav-btn ${page==='locks'?'active':''}`} onClick={()=>setPage('locks')}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
-            Lock
+          <button className={`nav-btn ${page==='payments'?'active':''}`} onClick={()=>setPage('payments')}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+            Pay
           </button>
           <button className={`nav-center ${voiceOpen?'active-voice':''}`} onClick={()=>setVoiceOpen(true)}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
@@ -1005,6 +1005,176 @@ function PageHeader({title, onBack}) {
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
     </button>
     <span className="page-header-title">{title}</span>
+  </div>;
+}
+
+// ─── Payments Page ────────────────────────────────────────────────────────────
+function PaymentsPage({setPage}) {
+  const [invoices, setInvoices] = useState([]);
+  const [loading, setLoading]   = useState(true);
+  const [tab, setTab]           = useState('outstanding');  // outstanding | history
+  const [receipt, setReceipt]   = useState(null);   // payment object to show receipt
+  const [paying, setPaying]     = useState(null);   // invoice id being paid
+
+  const load = () => api('/api/payments/invoices').then(d => { setInvoices(Array.isArray(d)?d:[]); setLoading(false); });
+  useEffect(()=>{ load(); },[]);
+
+  const outstanding = invoices.filter(i => i.status === 'unpaid' || i.status === 'partially_paid');
+  const history     = invoices.filter(i => i.status === 'paid' || i.status === 'cancelled');
+
+  const pay = async (inv) => {
+    setPaying(inv.id);
+    const res = await api(`/api/payments/pay/${inv.id}`, {method:'POST'});
+    setPaying(null);
+    if(res.error) return alert(res.error);
+    // Fetch receipt immediately
+    const rcpt = await api(`/api/payments/receipt/${res.paymentId}`);
+    setReceipt(rcpt);
+    load();
+  };
+
+  const fmtDate  = d => d ? new Date(d).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'}) : '—';
+  const fmtAmt   = a => `₹${Number(a).toLocaleString('en-IN')}`;
+  const typeIcon = t => ({'maintenance':'🔧','repair':'🛠','utility':'💡','amenity':'🏊','event':'🎉','other':'📄'}[t]||'📄');
+
+  const InvCard = ({inv}) => {
+    const isPaid = inv.status === 'paid';
+    const isCancelled = inv.status === 'cancelled';
+    const overdue = !isPaid && inv.due_date && new Date(inv.due_date) < new Date();
+    return <div style={{background:'var(--card)',borderRadius:18,padding:'18px 18px 14px',marginBottom:12,border:`1px solid ${overdue?'rgba(225,112,85,.35)':isCancelled?'var(--border)':'var(--border)'}`}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:10}}>
+        <div style={{flex:1,marginRight:12}}>
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+            <span style={{fontSize:18}}>{typeIcon(inv.invoice_type)}</span>
+            <span style={{fontWeight:700,fontSize:15,color:'var(--text)'}}>{inv.title||inv.description||'Invoice'}</span>
+          </div>
+          {inv.description && inv.title && <div style={{fontSize:12,color:'var(--text2)',marginBottom:4,lineHeight:1.4}}>{inv.description}</div>}
+          <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
+            {inv.due_date && <span style={{fontSize:11,color:overdue?'var(--red)':'var(--text2)'}}>
+              {overdue?'⚠ Overdue · ':'Due '}{ fmtDate(inv.due_date)}
+            </span>}
+            <span style={{fontSize:11,color:'var(--text2)'}}>{fmtDate(inv.created_at)}</span>
+          </div>
+        </div>
+        <div style={{textAlign:'right'}}>
+          <div style={{fontSize:20,fontWeight:800,color:isPaid?'var(--green)':overdue?'var(--red)':'var(--text)',fontFamily:'Space Mono'}}>{fmtAmt(inv.amount)}</div>
+          <span style={{fontSize:11,fontWeight:700,padding:'3px 9px',borderRadius:20,
+            background:isPaid?'rgba(0,184,148,.15)':isCancelled?'rgba(136,136,160,.12)':overdue?'rgba(225,112,85,.15)':'rgba(253,203,110,.15)',
+            color:isPaid?'var(--green)':isCancelled?'var(--text2)':overdue?'var(--red)':'var(--orange)'}}>
+            {isCancelled?'Cancelled':isPaid?'Paid':overdue?'Overdue':'Unpaid'}
+          </span>
+        </div>
+      </div>
+
+      {/* Paid receipt row */}
+      {isPaid && inv.payment_id && <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',
+          paddingTop:10,borderTop:'1px solid var(--border)',marginTop:4}}>
+        <div style={{fontSize:11,color:'var(--text2)'}}>
+          Paid {fmtDate(inv.paid_at)} · <span style={{fontFamily:'Space Mono',fontSize:10}}>{inv.transaction_id}</span>
+        </div>
+        <button onClick={()=>api(`/api/payments/receipt/${inv.payment_id}`).then(setReceipt)}
+          style={{background:'none',border:'1px solid var(--border)',borderRadius:8,padding:'4px 12px',
+            color:'var(--accent)',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>
+          Receipt
+        </button>
+      </div>}
+
+      {/* Pay button */}
+      {!isPaid && !isCancelled && <button
+        onClick={()=>pay(inv)} disabled={paying===inv.id}
+        style={{width:'100%',marginTop:12,padding:'13px 0',borderRadius:12,
+          background:paying===inv.id?'var(--card2)':'linear-gradient(135deg,var(--accent),#a29bfe)',
+          border:'none',color:'white',fontWeight:700,fontSize:15,cursor:'pointer',fontFamily:'inherit',
+          boxShadow:'0 4px 16px rgba(108,92,231,0.35)'}}>
+        {paying===inv.id ? 'Processing…' : `Pay ${fmtAmt(inv.amount)}`}
+      </button>}
+    </div>;
+  };
+
+  return <div>
+    <PageHeader title="Payments" onBack={()=>setPage('home')}/>
+    <div style={{padding:'0 20px'}}>
+      <div className="tab-bar" style={{marginBottom:16}}>
+        <button className={`tab ${tab==='outstanding'?'active':''}`} onClick={()=>setTab('outstanding')}>
+          Outstanding {outstanding.length>0&&<span style={{marginLeft:4,background:'var(--red)',borderRadius:10,padding:'1px 6px',fontSize:10,color:'white'}}>{outstanding.length}</span>}
+        </button>
+        <button className={`tab ${tab==='history'?'active':''}`} onClick={()=>setTab('history')}>History</button>
+      </div>
+
+      {loading && <div className="empty">Loading…</div>}
+
+      {!loading && tab==='outstanding' && <>
+        {!outstanding.length
+          ? <div style={{textAlign:'center',padding:'60px 0'}}>
+              <div style={{fontSize:48,marginBottom:12}}>✅</div>
+              <div style={{fontWeight:700,fontSize:16,color:'var(--text)',marginBottom:6}}>All clear!</div>
+              <div style={{fontSize:13,color:'var(--text2)'}}>No outstanding invoices.</div>
+            </div>
+          : outstanding.map(i=><InvCard key={i.id} inv={i}/>)}
+      </>}
+
+      {!loading && tab==='history' && <>
+        {!history.length
+          ? <div className="empty">No payment history yet</div>
+          : history.map(i=><InvCard key={i.id} inv={i}/>)}
+      </>}
+    </div>
+
+    {/* Receipt modal */}
+    {receipt && <ReceiptModal receipt={receipt} onClose={()=>setReceipt(null)}/>}
+  </div>;
+}
+
+function ReceiptModal({receipt, onClose}) {
+  const fmtDate = d => d ? new Date(d).toLocaleString('en-IN',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '—';
+  const fmtAmt  = a => `₹${Number(a).toLocaleString('en-IN')}`;
+  return <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.8)',display:'flex',alignItems:'flex-end',zIndex:300}}>
+    <div style={{background:'var(--card)',borderRadius:'24px 24px 0 0',padding:'28px 24px 40px',width:'100%',maxHeight:'85vh',overflowY:'auto'}}>
+      {/* Header */}
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:24}}>
+        <h3 style={{margin:0,fontSize:18}}>Payment Receipt</h3>
+        <button onClick={onClose} style={{background:'none',border:'none',color:'var(--text2)',cursor:'pointer',fontSize:24,lineHeight:1,padding:0}}>×</button>
+      </div>
+
+      {/* Success stamp */}
+      <div style={{textAlign:'center',marginBottom:24}}>
+        <div style={{width:64,height:64,borderRadius:'50%',background:'rgba(0,184,148,.15)',
+            display:'flex',alignItems:'center',justifyContent:'center',
+            margin:'0 auto 10px',fontSize:28}}>✅</div>
+        <div style={{fontSize:28,fontWeight:800,color:'var(--green)',fontFamily:'Space Mono'}}>{fmtAmt(receipt.amount)}</div>
+        <div style={{fontSize:13,color:'var(--text2)',marginTop:4}}>Payment Successful</div>
+      </div>
+
+      {/* Details */}
+      <div style={{background:'var(--card2)',borderRadius:16,padding:20,display:'flex',flexDirection:'column',gap:14}}>
+        {[
+          ['Invoice', receipt.title || receipt.description || '—'],
+          ['Society', receipt.society_name],
+          ['Resident', receipt.resident_name],
+          ['Apartment', `${receipt.unit_number}, ${receipt.tower_name}`],
+          ['Transaction ID', receipt.transaction_id],
+          ['Payment Date', fmtDate(receipt.created_at)],
+          ['Payment Method', 'Online Gateway'],
+        ].map(([l,v])=><div key={l} style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+          <span style={{fontSize:12,color:'var(--text2)',fontWeight:600}}>{l}</span>
+          <span style={{fontSize:13,color:'var(--text)',fontWeight:500,textAlign:'right',maxWidth:'60%',
+            fontFamily:l==='Transaction ID'?'Space Mono':'inherit',fontSize:l==='Transaction ID'?11:13}}>{v||'—'}</span>
+        </div>)}
+      </div>
+
+      {/* Dashed separator */}
+      <div style={{borderTop:'2px dashed var(--border)',margin:'20px 0'}}/>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <span style={{fontSize:13,color:'var(--text2)'}}>Amount Paid</span>
+        <span style={{fontSize:20,fontWeight:800,color:'var(--text)',fontFamily:'Space Mono'}}>{fmtAmt(receipt.amount)}</span>
+      </div>
+
+      <button onClick={onClose} style={{width:'100%',marginTop:24,padding:14,borderRadius:14,
+          background:'var(--accent)',border:'none',color:'white',fontWeight:700,fontSize:15,
+          cursor:'pointer',fontFamily:'inherit'}}>
+        Done
+      </button>
+    </div>
   </div>;
 }
 

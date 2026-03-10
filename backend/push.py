@@ -143,3 +143,16 @@ def notify_booking_confirmed(db, user_id: str, space_name: str, booking_date: st
         body=f'{space_name} on {booking_date} is confirmed.',
         data={'screen': 'Bookings', 'bookingId': booking_id, 'type': 'booking_confirmed'},
     )
+
+def notify_invoice_raised(db, user_id: str, title: str, amount: float, due_date: str, invoice_id: str):
+    tokens = _get_tokens_for_user(db, user_id)
+    due = f" Due {due_date}." if due_date else ""
+    send_push(tokens, f'🧾 New Invoice: {title}',
+              f'Rs. {amount:,.0f}{due}',
+              {'type': 'invoice_raised', 'invoiceId': invoice_id, 'screen': 'Payments'})
+
+def notify_payment_received(db, user_id: str, title: str, amount: float, payment_id: str):
+    tokens = _get_tokens_for_user(db, user_id)
+    send_push(tokens, f'✅ Payment Confirmed',
+              f'Rs. {amount:,.0f} for {title}',
+              {'type': 'payment_confirmed', 'paymentId': payment_id, 'screen': 'Payments'})

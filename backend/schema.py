@@ -14,7 +14,8 @@ CREATE TABLE IF NOT EXISTS vehicles (id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
 CREATE TABLE IF NOT EXISTS pets (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, apartment_id TEXT, society_id TEXT NOT NULL, pet_type TEXT, name TEXT, breed TEXT, age_years REAL, vaccinated INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS spaces (id TEXT PRIMARY KEY, society_id TEXT NOT NULL, name TEXT NOT NULL, description TEXT, space_type TEXT, capacity INTEGER DEFAULT 1, is_shared INTEGER DEFAULT 0, total_spots INTEGER DEFAULT 1, cost_per_hour REAL DEFAULT 0, available_from TEXT DEFAULT '06:00', available_to TEXT DEFAULT '22:00', created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS bookings (id TEXT PRIMARY KEY, space_id TEXT NOT NULL, user_id TEXT NOT NULL, society_id TEXT NOT NULL, spot_number INTEGER DEFAULT 1, booking_date DATE NOT NULL, start_time TEXT NOT NULL, end_time TEXT NOT NULL, status TEXT DEFAULT 'pending', total_cost REAL DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
-CREATE TABLE IF NOT EXISTS invoices (id TEXT PRIMARY KEY, booking_id TEXT, user_id TEXT NOT NULL, society_id TEXT NOT NULL, amount REAL NOT NULL, description TEXT, status TEXT DEFAULT 'unpaid', created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS invoices (id TEXT PRIMARY KEY, booking_id TEXT, user_id TEXT, society_id TEXT NOT NULL, amount REAL NOT NULL, title TEXT, description TEXT, invoice_type TEXT DEFAULT 'booking', due_date DATE, notes TEXT, raised_by TEXT, status TEXT DEFAULT 'unpaid', created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS invoice_residents (id TEXT PRIMARY KEY, invoice_id TEXT NOT NULL, user_id TEXT NOT NULL, apartment_id TEXT NOT NULL, status TEXT DEFAULT 'unpaid', paid_at DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(invoice_id, user_id));
 CREATE TABLE IF NOT EXISTS payments (id TEXT PRIMARY KEY, invoice_id TEXT NOT NULL, user_id TEXT NOT NULL, society_id TEXT NOT NULL, amount REAL NOT NULL, payment_method TEXT DEFAULT 'gateway', transaction_id TEXT, status TEXT DEFAULT 'success', created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS visitor_invitations (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, apartment_id TEXT NOT NULL, society_id TEXT NOT NULL, visitor_name TEXT NOT NULL, visitor_phone TEXT, visitor_type TEXT DEFAULT 'guest', purpose TEXT, qr_code TEXT UNIQUE, valid_from DATETIME, valid_to DATETIME, is_recurring INTEGER DEFAULT 0, status TEXT DEFAULT 'active', created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS visitor_entries (id TEXT PRIMARY KEY, invitation_id TEXT, visitor_name TEXT NOT NULL, visitor_phone TEXT, visitor_type TEXT DEFAULT 'guest', apartment_id TEXT, society_id TEXT NOT NULL, guard_user_id TEXT, entry_time DATETIME DEFAULT CURRENT_TIMESTAMP, exit_time DATETIME, approval_status TEXT DEFAULT 'pending', notes TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
@@ -53,6 +54,13 @@ def init_db():
     mr_cols = [r[1] for r in cur3.fetchall()]
     if 'rejection_reason' not in mr_cols:
         conn.execute("ALTER TABLE move_requests ADD COLUMN rejection_reason TEXT")
+    # invoices migration
+    cur4 = conn.execute("PRAGMA table_info(invoices)")
+    inv_cols = [r[1] for r in cur4.fetchall()]
+    for col, defn in [('title','TEXT'), ('invoice_type',"TEXT DEFAULT 'booking'"),
+                      ('due_date','DATE'), ('notes','TEXT'), ('raised_by','TEXT')]:
+        if col not in inv_cols:
+            conn.execute(f"ALTER TABLE invoices ADD COLUMN {col} {defn}")
     conn.commit(); conn.close()
 def get_conn():
     conn = sqlite3.connect(DB_PATH); conn.row_factory = sqlite3.Row; conn.execute('PRAGMA foreign_keys = ON'); return conn

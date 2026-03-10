@@ -91,14 +91,14 @@ function App() {
   if(!token) return <LoginPage onLogin={handleLogin}/>;
 
   const isSuperAdmin = ctx?.roles?.some(r=>r.role==='super_admin');
-  const pages = {dashboard:<Dashboard/>,residents:<Residents/>,spaces:<Spaces/>,bookings:<Bookings/>,approvals:<Approvals/>,daily_help:<DailyHelp/>,documents:<Documents/>,doc_reqs:<DocReqs/>,news:<NewsAdmin/>,banners:<BannersAdmin/>,ads:<AdsAdmin/>,guards:<Guards/>,societies:<Societies token={token}/>};
+  const pages = {dashboard:<Dashboard/>,residents:<Residents/>,spaces:<Spaces/>,bookings:<Bookings/>,invoices:<InvoicesAdmin/>,approvals:<Approvals/>,daily_help:<DailyHelp/>,documents:<Documents/>,doc_reqs:<DocReqs/>,news:<NewsAdmin/>,banners:<BannersAdmin/>,ads:<AdsAdmin/>,guards:<Guards/>,societies:<Societies token={token}/>};
 
   return <div className="layout">
     <div className="sidebar">
       <h1 style={{padding:'16px 20px 16px'}}>Admin Console</h1>
       <div className="society-name"><span>{ctx?.society?.name||'No Society'}</span>{ctx?.society?.city}</div>
       <nav>
-        {[['dashboard','Dashboard'],['residents','Residents'],['spaces','Spaces'],['bookings','Bookings'],['approvals','Approvals'],['daily_help','Daily Help'],['documents','Documents'],['doc_reqs','Doc Requirements'],['news','📰 News'],['banners','📢 Banners'],['ads','🏷 Ads'],['guards','🛡 Guards']].map(([k,l])=>
+        {[['dashboard','Dashboard'],['residents','Residents'],['spaces','Spaces'],['bookings','Bookings'],['invoices','💳 Invoices'],['approvals','Approvals'],['daily_help','Daily Help'],['documents','Documents'],['doc_reqs','Doc Requirements'],['news','📰 News'],['banners','📢 Banners'],['ads','🏷 Ads'],['guards','🛡 Guards']].map(([k,l])=>
           <button key={k} className={page===k?'active':''} onClick={()=>setPage(k)}>{l}</button>
         )}
         {isSuperAdmin&&<button className={page==='societies'?'active':''} onClick={()=>setPage('societies')} style={{borderTop:'1px solid #2d2d3d',marginTop:8,paddingTop:16}}>⚙ Manage Societies</button>}
@@ -573,6 +573,242 @@ function Societies({token}) {
 
 
 // ─── Banners Admin ────────────────────────────────────────────────────────────
+// ─── Invoices & Payments Admin ────────────────────────────────────────────────
+function InvoicesAdmin() {
+  const [tab, setTab]             = useState('invoices');
+  const [invoices, setInvoices]   = useState([]);
+  const [payments, setPayments]   = useState([]);
+  const [modal, setModal]         = useState(false);
+  const [recipients, setRecipients] = useState(null); // {invoiceId, rows}
+  // Raise invoice form state
+  const [form, setForm] = useState({title:'',description:'',invoiceType:'maintenance',amount:'',dueDate:'',notes:'',target:'all',residentTypes:[],});
+  const [preview, setPreview]     = useState(null);  // previewed recipients
+  const [submitting, setSubmitting] = useState(false);
+  const [err, setErr]             = useState('');
+
+  const TYPES = ['maintenance','repair','utility','amenity','event','other'];
+  const RES_TYPES = ['owner','owner_family','tenant','tenant_family'];
+  const TYPE_ICONS = {maintenance:'🔧',repair:'🛠',utility:'💡',amenity:'🏊',event:'🎉',other:'📄'};
+
+  const loadInvoices = () => api('/api/admin/invoices').then(setInvoices);
+  const loadPayments = () => api('/api/admin/payments').then(setPayments);
+  useEffect(()=>{ loadInvoices(); loadPayments(); },[]);
+
+  const fmtAmt  = a => `₹${Number(a).toLocaleString('en-IN')}`;
+  const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'}) : '—';
+
+  const openModal = () => {
+    setForm({title:'',description:'',invoiceType:'maintenance',amount:'',dueDate:'',notes:'',target:'all',residentTypes:[]});
+    setPreview(null); setErr(''); setModal(true);
+  };
+
+  const fetchPreview = async () => {
+    const res = await api('/api/admin/invoices/preview-recipients', {method:'POST', body: JSON.stringify({
+      target: form.target, residentTypes: form.residentTypes
+    })});
+    setPreview(Array.isArray(res) ? res : []);
+  };
+  React.useEffect(()=>{ if(modal) fetchPreview(); },[form.target, form.residentTypes.join(','), modal]);
+
+  const toggleResType = t => setForm(f => ({...f, residentTypes: f.residentTypes.includes(t) ? f.residentTypes.filter(x=>x!==t) : [...f.residentTypes, t]}));
+
+  const submit = async () => {
+    if(!form.title.trim()) return setErr('Title is required');
+    if(!form.amount || isNaN(form.amount)) return setErr('Valid amount is required');
+    if(form.target==='type' && !form.residentTypes.length) return setErr('Select at least one resident type');
+    setSubmitting(true); setErr('');
+    const res = await api('/api/admin/invoices', {method:'POST', body: JSON.stringify(form)});
+    setSubmitting(false);
+    if(res.error) return setErr(res.error);
+    setModal(false); loadInvoices();
+  };
+
+  const cancel = async (id) => {
+    if(!confirm('Cancel this invoice? Recipients will no longer be able to pay it.')) return;
+    const res = await api(`/api/admin/invoices/${id}`, {method:'DELETE'});
+    if(res.error) alert(res.error); else loadInvoices();
+  };
+
+  const viewRecipients = async (inv) => {
+    const rows = await api(`/api/admin/invoices/${inv.id}/recipients`);
+    setRecipients({invoice: inv, rows: Array.isArray(rows)?rows:[]});
+  };
+
+  return <div>
+    <div className="top-bar"><h2>💳 Invoices & Payments</h2>
+      <button className="btn btn-primary" onClick={openModal}>+ Raise Invoice</button>
+    </div>
+
+    <div className="tab-bar">
+      <button className={`tab ${tab==='invoices'?'active':''}`} onClick={()=>setTab('invoices')}>Invoices</button>
+      <button className={`tab ${tab==='payments'?'active':''}`} onClick={()=>setTab('payments')}>Payment Log</button>
+    </div>
+
+    {/* ── Invoices tab ── */}
+    {tab==='invoices' && <>
+      {!invoices.length && <div className="card"><div className="empty">No invoices raised yet</div></div>}
+      {invoices.map(inv => {
+        const isBulk = inv.recipient_count > 0;
+        const paidAll = isBulk ? inv.paid_count >= inv.recipient_count : inv.status==='paid';
+        const partPaid = isBulk && inv.paid_count > 0 && inv.paid_count < inv.recipient_count;
+        return <div key={inv.id} className="card" style={{marginBottom:12}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:10}}>
+            <div style={{flex:1}}>
+              <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+                <span style={{fontSize:18}}>{TYPE_ICONS[inv.invoice_type]||'📄'}</span>
+                <span style={{fontWeight:700,fontSize:15}}>{inv.title}</span>
+                <span className={`badge badge-${inv.invoice_type==='maintenance'?'blue':inv.invoice_type==='repair'?'orange':'green'}`} style={{fontSize:10}}>
+                  {inv.invoice_type}
+                </span>
+              </div>
+              {inv.description && <div style={{fontSize:12,color:'var(--text2)',marginBottom:4}}>{inv.description}</div>}
+              <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
+                <span style={{fontSize:11,color:'var(--text2)'}}>Raised {fmtDate(inv.created_at)}</span>
+                {inv.due_date && <span style={{fontSize:11,color:'var(--text2)'}}>Due {fmtDate(inv.due_date)}</span>}
+              </div>
+            </div>
+            <div style={{textAlign:'right',marginLeft:12}}>
+              <div style={{fontSize:18,fontWeight:800,fontFamily:'Space Mono'}}>{fmtAmt(inv.amount)}</div>
+              <span className={`badge badge-${paidAll?'green':partPaid?'orange':inv.status==='cancelled'?'red':'orange'}`}>
+                {inv.status==='cancelled'?'Cancelled':paidAll?'Paid':partPaid?`${inv.paid_count}/${inv.recipient_count} paid`:'Unpaid'}
+              </span>
+            </div>
+          </div>
+
+          <div style={{display:'flex',gap:8,flexWrap:'wrap',paddingTop:10,borderTop:'1px solid var(--border)'}}>
+            {isBulk
+              ? <button className="btn btn-sm" onClick={()=>viewRecipients(inv)} style={{fontSize:12}}>
+                  👥 {inv.recipient_count} recipient{inv.recipient_count!==1?'s':''}
+                </button>
+              : inv.resident_name && <span style={{fontSize:12,color:'var(--text2)'}}>{inv.resident_name} · {inv.unit_number}</span>}
+            {inv.status==='unpaid' && <button className="btn btn-sm btn-red" onClick={()=>cancel(inv.id)}>Cancel</button>}
+          </div>
+        </div>;
+      })}
+    </>}
+
+    {/* ── Payments tab ── */}
+    {tab==='payments' && <div className="card">
+      <table className="table"><thead><tr><th>Resident</th><th>Apartment</th><th>Invoice</th><th>Amount</th><th>Txn ID</th><th>Date</th></tr></thead>
+        <tbody>
+          {payments.map(p=><tr key={p.id}>
+            <td>{p.resident_name}<br/><span style={{fontSize:11,color:'var(--text2)'}}>{p.phone}</span></td>
+            <td>{p.unit_number} · {p.tower_name}</td>
+            <td><span style={{fontSize:12}}>{TYPE_ICONS[p.invoice_type]||'📄'}</span> {p.title}</td>
+            <td style={{fontFamily:'Space Mono',fontWeight:700}}>{fmtAmt(p.amount)}</td>
+            <td style={{fontFamily:'Space Mono',fontSize:11,color:'var(--text2)'}}>{p.transaction_id}</td>
+            <td style={{fontSize:12}}>{fmtDate(p.created_at)}</td>
+          </tr>)}
+        </tbody>
+      </table>
+      {!payments.length && <div className="empty">No payments yet</div>}
+    </div>}
+
+    {/* ── Recipients modal ── */}
+    {recipients && <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000,padding:20}}>
+      <div style={{background:'var(--card)',borderRadius:16,padding:24,width:'100%',maxWidth:560,maxHeight:'85vh',overflowY:'auto',border:'1px solid var(--border)'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+          <div>
+            <h3 style={{margin:'0 0 4px'}}>{recipients.invoice.title}</h3>
+            <span style={{fontSize:12,color:'var(--text2)'}}>{fmtAmt(recipients.invoice.amount)} · {recipients.rows.length} recipients</span>
+          </div>
+          <button onClick={()=>setRecipients(null)} style={{background:'none',border:'none',color:'var(--text2)',cursor:'pointer',fontSize:22}}>×</button>
+        </div>
+        <table className="table"><thead><tr><th>Name</th><th>Apartment</th><th>Type</th><th>Status</th></tr></thead>
+          <tbody>{recipients.rows.map(r=><tr key={r.id}>
+            <td>{r.name}<br/><span style={{fontSize:11,color:'var(--text2)'}}>{r.phone}</span></td>
+            <td>{r.unit_number} · {r.tower_name}</td>
+            <td><span style={{fontSize:11}}>{r.resident_type?.replace(/_/g,' ')}</span></td>
+            <td><span className={`badge badge-${r.status==='paid'?'green':'orange'}`}>{r.status}</span></td>
+          </tr>)}</tbody>
+        </table>
+      </div>
+    </div>}
+
+    {/* ── Raise Invoice modal ── */}
+    {modal && <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000,padding:20,overflowY:'auto'}}>
+      <div style={{background:'var(--card)',borderRadius:16,padding:28,width:'100%',maxWidth:560,border:'1px solid var(--border)',maxHeight:'95vh',overflowY:'auto'}}>
+        <h3 style={{marginBottom:20}}>Raise Invoice</h3>
+
+        {/* Type + title row */}
+        <div style={{display:'grid',gridTemplateColumns:'140px 1fr',gap:12,marginBottom:12}}>
+          <div>
+            <label style={{fontSize:12,color:'var(--text2)',fontWeight:600,display:'block',marginBottom:4}}>Category</label>
+            <select className="input" value={form.invoiceType} onChange={e=>setForm(f=>({...f,invoiceType:e.target.value}))}>
+              {TYPES.map(t=><option key={t} value={t}>{TYPE_ICONS[t]} {t.charAt(0).toUpperCase()+t.slice(1)}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={{fontSize:12,color:'var(--text2)',fontWeight:600,display:'block',marginBottom:4}}>Title *</label>
+            <input className="input" placeholder="e.g. Monthly Maintenance – March 2026" value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))}/>
+          </div>
+        </div>
+
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
+          <div>
+            <label style={{fontSize:12,color:'var(--text2)',fontWeight:600,display:'block',marginBottom:4}}>Amount (₹) *</label>
+            <input className="input" type="number" placeholder="2500" value={form.amount} onChange={e=>setForm(f=>({...f,amount:e.target.value}))}/>
+          </div>
+          <div>
+            <label style={{fontSize:12,color:'var(--text2)',fontWeight:600,display:'block',marginBottom:4}}>Due Date</label>
+            <input className="input" type="date" value={form.dueDate} onChange={e=>setForm(f=>({...f,dueDate:e.target.value}))}/>
+          </div>
+        </div>
+
+        <div style={{marginBottom:12}}>
+          <label style={{fontSize:12,color:'var(--text2)',fontWeight:600,display:'block',marginBottom:4}}>Description / Notes</label>
+          <textarea className="input" rows={2} placeholder="Optional additional details" value={form.description} onChange={e=>setForm(f=>({...f,description:e.target.value}))} style={{resize:'vertical',width:'100%'}}/>
+        </div>
+
+        {/* Recipients section */}
+        <div style={{background:'var(--card2)',borderRadius:12,padding:16,marginBottom:16}}>
+          <label style={{fontSize:12,color:'var(--text2)',fontWeight:700,display:'block',marginBottom:10,letterSpacing:0.5,textTransform:'uppercase'}}>Send To</label>
+          <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:form.target==='type'?12:0}}>
+            {[['all','All Residents'],['type','By Type']].map(([v,l])=>
+              <button key={v} onClick={()=>setForm(f=>({...f,target:v,residentTypes:[]}))}
+                style={{padding:'7px 14px',borderRadius:20,border:`2px solid ${form.target===v?'var(--accent)':'var(--border)'}`,
+                  background:form.target===v?'rgba(108,92,231,.15)':'transparent',
+                  color:form.target===v?'var(--accent)':'var(--text2)',cursor:'pointer',
+                  fontFamily:'inherit',fontWeight:600,fontSize:13}}>
+                {l}
+              </button>)}
+          </div>
+          {form.target==='type' && <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:10}}>
+            {RES_TYPES.map(t=>{
+              const sel = form.residentTypes.includes(t);
+              return <button key={t} onClick={()=>toggleResType(t)}
+                style={{padding:'6px 12px',borderRadius:20,border:`1px solid ${sel?'var(--accent)':'var(--border)'}`,
+                  background:sel?'rgba(108,92,231,.15)':'transparent',
+                  color:sel?'var(--accent)':'var(--text2)',cursor:'pointer',fontFamily:'inherit',fontSize:12}}>
+                {t.replace(/_/g,' ')}
+              </button>;
+            })}
+          </div>}
+
+          {/* Preview */}
+          {preview !== null && <div style={{marginTop:12,padding:'10px 14px',background:'rgba(108,92,231,.08)',borderRadius:10,fontSize:13}}>
+            {preview.length===0
+              ? <span style={{color:'var(--red)'}}>⚠ No eligible residents match this selection</span>
+              : <span style={{color:'var(--accent)',fontWeight:600}}>✓ Will send to {preview.length} resident{preview.length!==1?'s':''}</span>}
+            {preview.length>0 && <div style={{marginTop:6,display:'flex',flexWrap:'wrap',gap:4}}>
+              {preview.slice(0,8).map(r=><span key={r.user_id} style={{fontSize:11,padding:'2px 8px',borderRadius:6,background:'var(--card)',border:'1px solid var(--border)'}}>{r.unit_number}</span>)}
+              {preview.length>8 && <span style={{fontSize:11,color:'var(--text2)'}}>+{preview.length-8} more</span>}
+            </div>}
+          </div>}
+        </div>
+
+        {err && <p style={{color:'var(--red)',fontSize:13,marginBottom:12}}>{err}</p>}
+        <div style={{display:'flex',gap:10}}>
+          <button className="btn btn-primary" onClick={submit} disabled={submitting}>
+            {submitting?'Sending…':'Raise Invoice'}
+          </button>
+          <button className="btn" style={{background:'var(--card2)',border:'1px solid var(--border)'}} onClick={()=>setModal(false)}>Cancel</button>
+        </div>
+      </div>
+    </div>}
+  </div>;
+}
+
 function BannersAdmin() {
   const [banners,setBanners]=useState([]);
   const [modal,setModal]=useState(null); // null | 'add' | banner object
