@@ -91,14 +91,14 @@ function App() {
   if(!token) return <LoginPage onLogin={handleLogin}/>;
 
   const isSuperAdmin = ctx?.roles?.some(r=>r.role==='super_admin');
-  const pages = {dashboard:<Dashboard/>,residents:<Residents/>,spaces:<Spaces/>,bookings:<Bookings/>,approvals:<Approvals/>,daily_help:<DailyHelp/>,documents:<Documents/>,doc_reqs:<DocReqs/>,news:<NewsAdmin/>,societies:<Societies token={token}/>};
+  const pages = {dashboard:<Dashboard/>,residents:<Residents/>,spaces:<Spaces/>,bookings:<Bookings/>,approvals:<Approvals/>,daily_help:<DailyHelp/>,documents:<Documents/>,doc_reqs:<DocReqs/>,news:<NewsAdmin/>,guards:<Guards/>,societies:<Societies token={token}/>};
 
   return <div className="layout">
     <div className="sidebar">
       <h1 style={{padding:'16px 20px 16px'}}>Admin Console</h1>
       <div className="society-name"><span>{ctx?.society?.name||'No Society'}</span>{ctx?.society?.city}</div>
       <nav>
-        {[['dashboard','Dashboard'],['residents','Residents'],['spaces','Spaces'],['bookings','Bookings'],['approvals','Approvals'],['daily_help','Daily Help'],['documents','Documents'],['doc_reqs','Doc Requirements'],['news','📰 News']].map(([k,l])=>
+        {[['dashboard','Dashboard'],['residents','Residents'],['spaces','Spaces'],['bookings','Bookings'],['approvals','Approvals'],['daily_help','Daily Help'],['documents','Documents'],['doc_reqs','Doc Requirements'],['news','📰 News'],['guards','🛡 Guards']].map(([k,l])=>
           <button key={k} className={page===k?'active':''} onClick={()=>setPage(k)}>{l}</button>
         )}
         {isSuperAdmin&&<button className={page==='societies'?'active':''} onClick={()=>setPage('societies')} style={{borderTop:'1px solid #2d2d3d',marginTop:8,paddingTop:16}}>⚙ Manage Societies</button>}
@@ -431,6 +431,125 @@ function Societies({token}) {
         <span style={{fontSize:11,padding:'2px 8px',borderRadius:12,background:'rgba(253,203,110,.1)',color:'#ffd3a5'}}>{s.guard_count} guards</span>
       </div>
     </div>)}
+  </div>;
+}
+
+function Guards() {
+  const [guards, setGuards] = useState([]);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({name:'', pin:''});
+  const [editPin, setEditPin] = useState(null); // {roleId, pin}
+  const [msg, setMsg] = useState('');
+  const [err, setErr] = useState('');
+
+  const load = () => api('/api/admin/guards').then(setGuards);
+  useEffect(() => { load(); }, []);
+
+  const create = () => {
+    setErr('');
+    if(!form.name.trim()) return setErr('Name required');
+    if(!form.pin || form.pin.length < 4 || !/^\d+$/.test(form.pin)) return setErr('PIN must be at least 4 digits');
+    api('/api/admin/guards', {method:'POST', body:JSON.stringify(form)}).then(d => {
+      if(d.error) return setErr(d.error);
+      setForm({name:'', pin:''}); setShowForm(false); setMsg('Guard created!'); load();
+      setTimeout(() => setMsg(''), 3000);
+    });
+  };
+
+  const remove = (roleId, name) => {
+    if(!confirm(`Remove guard ${name}? They won't be able to log in.`)) return;
+    api(`/api/admin/guards/${roleId}`, {method:'DELETE'}).then(load);
+  };
+
+  const savePin = (roleId) => {
+    if(!editPin?.pin || editPin.pin.length < 4 || !/^\d+$/.test(editPin.pin)) return setErr('PIN must be at least 4 digits');
+    api(`/api/admin/guards/${roleId}/pin`, {method:'PUT', body:JSON.stringify({pin:editPin.pin})}).then(d => {
+      if(d.error) return setErr(d.error);
+      setEditPin(null); setErr(''); load();
+    });
+  };
+
+  const genPin = () => Math.floor(1000 + Math.random() * 9000).toString();
+
+  return <div>
+    <div className="top-bar" style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+      <h2>Guard Logins</h2>
+      <button className="btn btn-primary btn-sm" onClick={() => { setShowForm(s=>!s); setErr(''); }}>
+        {showForm ? '✕ Cancel' : '+ Add Guard'}
+      </button>
+    </div>
+
+    {msg && <div style={{background:'rgba(168,230,207,.1)',border:'1px solid rgba(168,230,207,.3)',borderRadius:10,padding:'10px 14px',marginBottom:16,fontSize:13,color:'#a8e6cf'}}>{msg}</div>}
+
+    {showForm && <div style={{background:'var(--card)',border:'1px solid var(--border)',borderRadius:16,padding:24,marginBottom:24}}>
+      <h3 style={{marginBottom:16}}>New Guard</h3>
+      <div className="form-group">
+        <label className="label">Guard Name *</label>
+        <input className="input" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="e.g. Rajesh Kumar"/>
+      </div>
+      <div className="form-group">
+        <label className="label">PIN * <span style={{color:'var(--text2)',fontWeight:400}}>(min 4 digits — guard uses this to log in)</span></label>
+        <div style={{display:'flex',gap:10,alignItems:'center'}}>
+          <input className="input" value={form.pin} onChange={e=>setForm(f=>({...f,pin:e.target.value.replace(/\D/g,'')}))}
+            placeholder="e.g. 4821" maxLength={8} style={{fontFamily:'monospace',fontSize:20,letterSpacing:4,flex:1}}/>
+          <button className="btn btn-sm" onClick={()=>setForm(f=>({...f,pin:genPin()}))}
+            style={{background:'var(--card2)',border:'1px solid var(--border)',color:'var(--text)',whiteSpace:'nowrap'}}>
+            🎲 Generate
+          </button>
+        </div>
+      </div>
+      {err && <div style={{color:'var(--red)',fontSize:13,marginBottom:12}}>{err}</div>}
+      <button className="btn btn-primary" style={{width:'100%'}} onClick={create}>Create Guard Login</button>
+    </div>}
+
+    {/* Guard list */}
+    {!guards.length && !showForm && <div className="empty">
+      No guards yet. Add a guard to give them PIN-based access to the GateKeeper app.
+    </div>}
+
+    {guards.map(g => <div key={g.role_id} style={{background:'var(--card)',border:'1px solid var(--border)',borderRadius:14,padding:20,marginBottom:12}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:12}}>
+        <div style={{display:'flex',alignItems:'center',gap:14}}>
+          <div style={{width:42,height:42,borderRadius:21,background:'rgba(88,166,255,.15)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20}}>🛡</div>
+          <div>
+            <div style={{fontWeight:700,fontSize:15}}>{g.guard_name || g.name || 'Guard'}</div>
+            <div style={{fontSize:12,color:'var(--text2)',marginTop:2}}>Guard · {g.phone}</div>
+          </div>
+        </div>
+
+        {/* PIN display / edit */}
+        {editPin?.roleId === g.role_id ? (
+          <div style={{display:'flex',gap:8,alignItems:'center'}}>
+            <input value={editPin.pin} onChange={e=>setEditPin(p=>({...p,pin:e.target.value.replace(/\D/g,'')}))}
+              maxLength={8} style={{width:90,padding:'6px 10px',borderRadius:8,border:'1px solid var(--accent)',background:'var(--card2)',color:'var(--text)',fontFamily:'monospace',fontSize:18,letterSpacing:4,textAlign:'center'}}/>
+            <button onClick={()=>savePin(g.role_id)} style={{padding:'6px 12px',borderRadius:8,border:'none',background:'var(--accent)',color:'white',cursor:'pointer',fontWeight:600,fontSize:12,fontFamily:'inherit'}}>Save</button>
+            <button onClick={()=>{setEditPin(null);setErr('');}} style={{padding:'6px 10px',borderRadius:8,border:'1px solid var(--border)',background:'none',color:'var(--text2)',cursor:'pointer',fontSize:12,fontFamily:'inherit'}}>✕</button>
+          </div>
+        ) : (
+          <div style={{display:'flex',gap:8,alignItems:'center'}}>
+            <div style={{background:'var(--card2)',border:'1px solid var(--border)',borderRadius:10,padding:'8px 16px',fontFamily:'monospace',fontSize:22,letterSpacing:6,color:'var(--accent)',fontWeight:700}}>
+              {g.guard_pin || '—'}
+            </div>
+            <button onClick={()=>{setEditPin({roleId:g.role_id,pin:g.guard_pin||''});setErr('');}}
+              style={{padding:'6px 10px',borderRadius:8,border:'1px solid var(--border)',background:'none',color:'var(--text2)',cursor:'pointer',fontSize:12,fontFamily:'inherit'}}>
+              ✏️
+            </button>
+            <button onClick={()=>remove(g.role_id, g.guard_name||g.name)}
+              style={{padding:'6px 10px',borderRadius:8,border:'none',background:'rgba(248,81,73,.12)',color:'var(--red)',cursor:'pointer',fontSize:12,fontFamily:'inherit'}}>
+              Remove
+            </button>
+          </div>
+        )}
+      </div>
+      {err && editPin?.roleId === g.role_id && <div style={{color:'var(--red)',fontSize:12,marginTop:8}}>{err}</div>}
+    </div>)}
+
+    <div style={{marginTop:20,padding:'14px 16px',background:'rgba(255,255,255,.03)',borderRadius:12,border:'1px solid var(--border)'}}>
+      <p style={{fontSize:12,color:'var(--text2)',margin:0,lineHeight:1.6}}>
+        🔑 Guards use their <strong style={{color:'var(--text)'}}>PIN only</strong> to log in to the GateKeeper app — no phone or OTP needed.<br/>
+        Share the PIN securely with the guard. They'll also need to select this society on the login screen.
+      </p>
+    </div>
   </div>;
 }
 

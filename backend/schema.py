@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS societies (id TEXT PRIMARY KEY, name TEXT NOT NULL, a
 CREATE TABLE IF NOT EXISTS towers (id TEXT PRIMARY KEY, society_id TEXT NOT NULL, name TEXT NOT NULL, floors INTEGER DEFAULT 10, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS apartments (id TEXT PRIMARY KEY, tower_id TEXT NOT NULL, unit_number TEXT NOT NULL, floor INTEGER, bedrooms INTEGER DEFAULT 2, area_sqft REAL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, phone TEXT UNIQUE NOT NULL, name TEXT, email TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
-CREATE TABLE IF NOT EXISTS user_society_roles (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, society_id TEXT NOT NULL, role TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, society_id, role));
+CREATE TABLE IF NOT EXISTS user_society_roles (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, society_id TEXT NOT NULL, role TEXT NOT NULL, guard_pin TEXT, guard_name TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, society_id, role));
 CREATE TABLE IF NOT EXISTS residents (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, apartment_id TEXT NOT NULL, society_id TEXT NOT NULL, resident_type TEXT NOT NULL, status TEXT DEFAULT 'pending', invited_by TEXT, lease_start DATE, lease_end DATE, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, apartment_id));
 CREATE TABLE IF NOT EXISTS otp_sessions (id TEXT PRIMARY KEY, phone TEXT NOT NULL, otp TEXT NOT NULL, verified INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS documents (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, resident_id TEXT, society_id TEXT NOT NULL, doc_type TEXT NOT NULL, file_name TEXT, file_data TEXT, status TEXT DEFAULT 'pending', created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
@@ -31,7 +31,15 @@ CREATE TABLE IF NOT EXISTS user_active_context (user_id TEXT PRIMARY KEY, apartm
 def uid(prefix=''):
     return f"{prefix}{uuid.uuid4().hex[:8]}"
 def init_db():
-    conn = sqlite3.connect(DB_PATH); conn.executescript(SCHEMA); conn.commit(); conn.close()
+    conn = sqlite3.connect(DB_PATH); conn.executescript(SCHEMA); conn.commit()
+    # Migrations: add columns to existing tables if not present
+    cur = conn.execute("PRAGMA table_info(user_society_roles)")
+    cols = [r[1] for r in cur.fetchall()]
+    if 'guard_pin' not in cols:
+        conn.execute("ALTER TABLE user_society_roles ADD COLUMN guard_pin TEXT")
+    if 'guard_name' not in cols:
+        conn.execute("ALTER TABLE user_society_roles ADD COLUMN guard_name TEXT")
+    conn.commit(); conn.close()
 def get_conn():
     conn = sqlite3.connect(DB_PATH); conn.row_factory = sqlite3.Row; conn.execute('PRAGMA foreign_keys = ON'); return conn
 def dr(row):

@@ -821,8 +821,111 @@ def sa_delete_tower(tid):
     db.commit()
     return jsonify({'success': True})
 
-# List staff (admins + guards) for a society
-@app.route('/api/superadmin/societies/<sid>/staff')
+@app.route('/api/guard/login-pin', methods=['POST'])
+def guard_login_pin():
+    pin = (request.json or {}).get('pin', '').strip()
+    society_id = (request.json or {}).get('societyId', '').strip()
+    if not pin or not society_id:
+        return jsonify({'error': 'PIN and society required'}), 400
+    db = get_db()
+    role_row = dr(db.execute(
+        "SELECT usr.*, u.id as user_id, u.name, u.phone FROM user_society_roles usr "
+        "JOIN users u ON usr.user_id=u.id "
+        "WHERE usr.guard_pin=? AND usr.society_id=? AND usr.role='guard'",
+        (pin, society_id)).fetchone())
+    if not role_row:
+        return jsonify({'error': 'Invalid PIN'}), 401
+    # Issue a session token (reuse otp_sessions table — store guard user's phone)
+    user = dr(db.execute('SELECT * FROM users WHERE id=?', (role_row['user_id'],)).fetchone())
+    sid = uid('otp-')
+    db.execute('INSERT INTO otp_sessions VALUES(?,?,?,1,CURRENT_TIMESTAMP)', (sid, user['phone'], pin))
+    # Ensure active context is set for this guard
+    db.execute('INSERT OR REPLACE INTO user_active_context VALUES(?,?,?)',
+               (user['id'], None, society_id))
+    db.commit()
+    return jsonify({
+        'token': sid,
+        'user': user,
+        'guardName': role_row.get('guard_name') or user.get('name') or 'Guard',
+        'societyId': society_id,
+    })
+
+# ─── Admin: Guard PIN management (regular admins, not just super_admin) ─────────
+
+@app.route('/api/admin/guards')
+@admin_required
+def admin_list_guards():
+    db = get_db()
+    guards = drs(db.execute(
+        "SELECT usr.id as role_id, usr.guard_pin, usr.guard_name, u.id as user_id, u.name, u.phone "
+        "FROM user_society_roles usr JOIN users u ON usr.user_id=u.id "
+        "WHERE usr.society_id=? AND usr.role='guard' ORDER BY usr.guard_name, u.name",
+        (g.soc,)).fetchall())
+    return jsonify(guards)
+
+@app.route('/api/admin/guards', methods=['POST'])
+@admin_required
+def admin_create_guard():
+    d = request.json or {}; db = get_db()
+    name = (d.get('name') or '').strip()
+    pin  = (d.get('pin') or '').strip()
+    if not name: return jsonify({'error': 'Name required'}), 400
+    if not pin or not pin.isdigit() or len(pin) < 4:
+        return jsonify({'error': 'PIN must be at least 4 digits'}), 400
+    # Check PIN unique within society
+    conflict = db.execute(
+        "SELECT id FROM user_society_roles WHERE guard_pin=? AND society_id=?",
+        (pin, g.soc)).fetchone()
+    if conflict: return jsonify({'error': 'PIN already in use by another guard'}), 400
+    # Create a synthetic user for this guard (phone = guard-<society>-<pin>)
+    synthetic_phone = f"guard-{g.soc[-6:]}-{pin}"
+    user = dr(db.execute('SELECT * FROM users WHERE phone=?', (synthetic_phone,)).fetchone())
+    if not user:
+        user_id = uid('usr-')
+        db.execute('INSERT INTO users(id,phone,name) VALUES(?,?,?)', (user_id, synthetic_phone, name))
+        user = dr(db.execute('SELECT * FROM users WHERE id=?', (user_id,)).fetchone())
+    else:
+        db.execute('UPDATE users SET name=? WHERE id=?', (name, user['id']))
+    # Assign guard role with PIN
+    existing = dr(db.execute(
+        "SELECT id FROM user_society_roles WHERE user_id=? AND society_id=? AND role='guard'",
+        (user['id'], g.soc)).fetchone())
+    if existing:
+        db.execute("UPDATE user_society_roles SET guard_pin=?, guard_name=? WHERE id=?",
+                   (pin, name, existing['id']))
+    else:
+        db.execute("INSERT INTO user_society_roles(id,user_id,society_id,role,guard_pin,guard_name,created_at) "
+                   "VALUES(?,?,?,?,?,?,CURRENT_TIMESTAMP)",
+                   (uid('ur-'), user['id'], g.soc, 'guard', pin, name))
+    db.commit()
+    return jsonify({'success': True})
+
+@app.route('/api/admin/guards/<role_id>', methods=['DELETE'])
+@admin_required
+def admin_delete_guard(role_id):
+    db = get_db()
+    db.execute("DELETE FROM user_society_roles WHERE id=? AND society_id=? AND role='guard'",
+               (role_id, g.soc))
+    db.commit()
+    return jsonify({'success': True})
+
+@app.route('/api/admin/guards/<role_id>/pin', methods=['PUT'])
+@admin_required
+def admin_update_guard_pin(role_id):
+    d = request.json or {}; db = get_db()
+    pin = (d.get('pin') or '').strip()
+    if not pin or not pin.isdigit() or len(pin) < 4:
+        return jsonify({'error': 'PIN must be at least 4 digits'}), 400
+    conflict = db.execute(
+        "SELECT id FROM user_society_roles WHERE guard_pin=? AND society_id=? AND id!=?",
+        (pin, g.soc, role_id)).fetchone()
+    if conflict: return jsonify({'error': 'PIN already in use'}), 400
+    db.execute("UPDATE user_society_roles SET guard_pin=? WHERE id=? AND society_id=?",
+               (pin, role_id, g.soc))
+    db.commit()
+    return jsonify({'success': True})
+
+
 @super_admin_required
 def sa_list_staff(sid):
     db = get_db()
