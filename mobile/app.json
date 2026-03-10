@@ -1,0 +1,47 @@
+{
+  "expo": {
+    "name": "PA Lite",
+    "slug": "palite",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "backgroundColor": "#0a0a0f"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.gatekeeper.palite",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "PA Lite uses the microphone for voice navigation.",
+        "NSSpeechRecognitionUsageDescription": "PA Lite uses speech recognition to navigate the app hands-free.",
+        "NSPhotoLibraryUsageDescription": "PA Lite accesses photos for marketplace listings.",
+        "NSCameraUsageDescription": "PA Lite uses the camera to take photos for marketplace listings."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0a0a0f"
+      },
+      "package": "com.gatekeeper.palite",
+      "permissions": [
+        "RECORD_AUDIO",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "CAMERA"
+      ]
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-image-picker",
+      [
+        "@react-native-voice/voice",
+        {
+          "microphonePermission": "PA Lite uses your microphone for voice navigation.",
+          "speechRecognitionPermission": "PA Lite uses speech recognition to navigate the app."
+        }
+      ]
+    ]
+  }
+}
