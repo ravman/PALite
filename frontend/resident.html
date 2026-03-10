@@ -57,6 +57,14 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .label{font-size:12px;color:var(--text2);margin-bottom:6px;display:block}
 .form-group{margin-bottom:14px}
 select.input{appearance:none;cursor:pointer}
+/* Photo picker */
+.photo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px}
+.photo-thumb{aspect-ratio:1;border-radius:10px;object-fit:cover;width:100%;display:block;background:var(--card2)}
+.photo-thumb-wrap{position:relative}
+.photo-remove{position:absolute;top:4px;right:4px;width:20px;height:20px;background:rgba(0,0,0,0.7);border:none;border-radius:50%;color:white;cursor:pointer;font-size:14px;line-height:20px;text-align:center;padding:0}
+.photo-add{aspect-ratio:1;border-radius:10px;border:2px dashed var(--border);background:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:var(--text2);font-size:11px;font-family:inherit;transition:.2s}
+.photo-add:hover{border-color:var(--accent);color:var(--accent)}
+.photo-add svg{width:24px;height:24px}
 /* Voice assistant */
 .voice-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.85);backdrop-filter:blur(16px);z-index:500;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px}
 .voice-orb{width:96px;height:96px;border-radius:50%;background:white;display:flex;align-items:center;justify-content:center;position:relative}
@@ -739,20 +747,43 @@ function VisitorsPage({ctx,setPage,prefill}) {
 function MarketplacePage({setPage, prefill}) {
   const [posts, setPosts] = useState([]);
   const [modal, setModal] = useState(false);
-  const [marketPrefill, setMarketPrefill] = useState({});
+  const [form, setForm] = useState({postType:'sell',title:'',description:'',price:''});
+  const [photos, setPhotos] = useState([]); // array of base64 strings
+  const [lightbox, setLightbox] = useState(null); // {images, index}
+  const fileInputRef = React.useRef(null);
+
+  useEffect(()=>{ api('/api/marketplace').then(setPosts); },[]);
 
   useEffect(()=>{
     if(!prefill) return;
-    const fields = {};
-    if(prefill.postType) fields.postType = prefill.postType;
-    if(prefill.title) fields.title = prefill.title;
-    if(prefill.description) fields.description = prefill.description;
-    if(prefill.price) fields.price = prefill.price;
-    if(Object.keys(fields).length > 0) {
-      setMarketPrefill(fields);
-      setModal(true);
-    }
+    const updates = {};
+    if(prefill.postType) updates.postType = prefill.postType;
+    if(prefill.title) updates.title = prefill.title;
+    if(prefill.description) updates.description = prefill.description;
+    if(prefill.price) updates.price = prefill.price;
+    if(Object.keys(updates).length > 0) { setForm(f=>({...f,...updates})); setModal(true); }
   },[prefill]);
+
+  const setF = (k,v) => setForm(f=>({...f,[k]:v}));
+
+  const addPhotos = (e) => {
+    const files = Array.from(e.target.files);
+    if(photos.length + files.length > 6) return alert('Maximum 6 photos per listing');
+    files.forEach(file=>{
+      const reader = new FileReader();
+      reader.onload = ev => setPhotos(p=>[...p, ev.target.result]);
+      reader.readAsDataURL(file);
+    });
+    e.target.value = '';
+  };
+
+  const removePhoto = (i) => setPhotos(p=>p.filter((_,idx)=>idx!==i));
+
+  const create = () => {
+    if(!form.title) return alert('Title required');
+    api('/api/marketplace',{method:'POST',body:JSON.stringify({...form,price:parseFloat(form.price)||0,images:photos})})
+      .then(()=>{ api('/api/marketplace').then(setPosts); setModal(false); setForm({postType:'sell',title:'',description:'',price:''}); setPhotos([]); });
+  };
 
   useEffect(()=>{api('/api/marketplace').then(setPosts);},[]);
 
@@ -761,14 +792,84 @@ function MarketplacePage({setPage, prefill}) {
   return <div>
     <PageHeader title="Marketplace" onBack={()=>setPage('home')}/>
     <div className="page">
-    <div className="flex-between mb-4"><button className="btn btn-sm btn-primary" onClick={()=>setModal(true)}>+ Post</button></div>
+
+    {/* Post list */}
+    <button className="btn btn-primary mb-4" style={{width:'100%'}} onClick={()=>setModal(true)}>+ New Listing</button>
     {posts.map(p=><div key={p.id} className="card">
-      <div className="flex-between"><div><div className="card-title">{p.title}</div><div className="card-sub">{p.description}</div><div className="card-sub mt-2">by {p.posted_by}</div></div>
-      <div style={{textAlign:'right'}}><div style={{fontSize:16,fontWeight:700,color:'var(--green)',fontFamily:'Space Mono'}}>Rs.{p.price}</div><span className={`badge badge-${p.post_type==='sell'?'purple':'orange'}`}>{p.post_type}</span></div></div>
+      {p.images&&p.images.length>0&&<div style={{display:'grid',gridTemplateColumns:`repeat(${Math.min(p.images.length,3)},1fr)`,gap:4,borderRadius:10,overflow:'hidden',marginBottom:10}}>
+        {p.images.slice(0,3).map((img,i)=><div key={i} style={{position:'relative',cursor:'pointer'}} onClick={()=>setLightbox({images:p.images,index:i})}>
+          <img src={img} style={{width:'100%',aspectRatio:'1',objectFit:'cover',display:'block'}}/>
+          {i===2&&p.images.length>3&&<div style={{position:'absolute',inset:0,background:'rgba(0,0,0,0.55)',display:'flex',alignItems:'center',justifyContent:'center',color:'white',fontWeight:700,fontSize:18}}>+{p.images.length-3}</div>}
+        </div>)}
+      </div>}
+      <div className="flex-between">
+        <div style={{flex:1}}>
+          <div className="card-title">{p.title}</div>
+          <div className="card-sub">{p.description}</div>
+          <div className="card-sub mt-2">by {p.posted_by}</div>
+        </div>
+        <div style={{textAlign:'right',flexShrink:0,marginLeft:12}}>
+          <div style={{fontSize:16,fontWeight:700,color:'var(--green)',fontFamily:'Space Mono'}}>Rs.{p.price}</div>
+          <span className={`badge badge-${p.post_type==='sell'?'purple':'orange'}`}>{p.post_type}</span>
+        </div>
+      </div>
     </div>)}
     {!posts.length && <div className="empty">No posts in your society</div>}
-    {modal && <FormModal title="Create Post" onClose={()=>setModal(false)} onSubmit={create} initialData={marketPrefill}
-      fields={[{key:'postType',label:'Type',type:'select',options:['buy','sell']},{key:'title',label:'Title'},{key:'description',label:'Description'},{key:'price',label:'Price',type:'number'}]}/>}
+
+    {/* Lightbox */}
+    {lightbox && <div className="modal-overlay" onClick={()=>setLightbox(null)} style={{alignItems:'center'}}>
+      <div onClick={e=>e.stopPropagation()} style={{width:'100%',maxWidth:480,padding:'0 20px'}}>
+        <img src={lightbox.images[lightbox.index]} style={{width:'100%',borderRadius:16,maxHeight:'70vh',objectFit:'contain'}}/>
+        <div style={{display:'flex',justifyContent:'center',gap:8,marginTop:12}}>
+          {lightbox.images.map((_,i)=><div key={i} onClick={()=>setLightbox(l=>({...l,index:i}))} style={{width:8,height:8,borderRadius:'50%',background:i===lightbox.index?'white':'rgba(255,255,255,0.3)',cursor:'pointer'}}/>)}
+        </div>
+        <div style={{display:'flex',justifyContent:'space-between',marginTop:12}}>
+          <button onClick={()=>setLightbox(l=>({...l,index:Math.max(0,l.index-1)}))} disabled={lightbox.index===0} className="btn" style={{background:'rgba(255,255,255,0.1)',color:'white',flex:1,marginRight:8}}>← Prev</button>
+          <button onClick={()=>setLightbox(l=>({...l,index:Math.min(l.images.length-1,l.index+1)}))} disabled={lightbox.index===lightbox.images.length-1} className="btn" style={{background:'rgba(255,255,255,0.1)',color:'white',flex:1}}>Next →</button>
+        </div>
+        <button onClick={()=>setLightbox(null)} className="btn" style={{width:'100%',marginTop:8,background:'rgba(255,255,255,0.08)',color:'white'}}>Close</button>
+      </div>
+    </div>}
+
+    {/* Create post modal */}
+    {modal && <div className="modal-overlay" onClick={()=>setModal(false)}>
+      <div className="modal" onClick={e=>e.stopPropagation()}>
+        <h2>New Listing</h2>
+
+        {/* Photos */}
+        <div className="form-group">
+          <label className="label">Photos <span style={{color:'var(--text2)'}}>(up to 6)</span></label>
+          <div className="photo-grid">
+            {photos.map((src,i)=><div key={i} className="photo-thumb-wrap">
+              <img src={src} className="photo-thumb"/>
+              <button className="photo-remove" onClick={()=>removePhoto(i)}>×</button>
+            </div>)}
+            {photos.length<6&&<button className="photo-add" onClick={()=>fileInputRef.current.click()}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              Add photo
+            </button>}
+          </div>
+          <input ref={fileInputRef} type="file" accept="image/*" multiple style={{display:'none'}} onChange={addPhotos}/>
+        </div>
+
+        <div className="form-group"><label className="label">Type</label>
+          <select className="input" value={form.postType} onChange={e=>setF('postType',e.target.value)}>
+            <option value="sell">Sell</option><option value="buy">Buy</option>
+          </select></div>
+        <div className="form-group"><label className="label">Title *</label>
+          <input className="input" value={form.title} onChange={e=>setF('title',e.target.value)} placeholder="e.g. Sofa for sale"/></div>
+        <div className="form-group"><label className="label">Description</label>
+          <textarea className="input" value={form.description} onChange={e=>setF('description',e.target.value)} placeholder="Condition, details..." rows={3} style={{resize:'none'}}/></div>
+        <div className="form-group"><label className="label">Price (Rs.)</label>
+          <input className="input" type="number" value={form.price} onChange={e=>setF('price',e.target.value)} placeholder="0"/></div>
+
+        <div className="flex" style={{gap:10,marginTop:16}}>
+          <button className="btn btn-primary" style={{flex:1}} onClick={create}>Post Listing</button>
+          <button className="btn btn-secondary" style={{flex:1}} onClick={()=>setModal(false)}>Cancel</button>
+        </div>
+      </div>
+    </div>}
+
     </div>
   </div>;
 }

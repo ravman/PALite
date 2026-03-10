@@ -328,15 +328,22 @@ def cancel_invitation(vid): get_db().execute("UPDATE visitor_invitations SET sta
 @app.route('/api/marketplace')
 @auth_required
 def marketplace():
+    import json as _json
     if not g.soc: return jsonify([])
-    return jsonify(drs(get_db().execute("SELECT mp.*, u.name as posted_by FROM marketplace_posts mp JOIN users u ON mp.user_id=u.id WHERE mp.society_id=? AND mp.status='active' ORDER BY mp.created_at DESC",(g.soc,)).fetchall()))
+    posts = drs(get_db().execute("SELECT mp.*, u.name as posted_by FROM marketplace_posts mp JOIN users u ON mp.user_id=u.id WHERE mp.society_id=? AND mp.status='active' ORDER BY mp.created_at DESC",(g.soc,)).fetchall())
+    for p in posts:
+        try: p['images'] = _json.loads(p['images']) if p.get('images') else []
+        except: p['images'] = []
+    return jsonify(posts)
 
 @app.route('/api/marketplace', methods=['POST'])
 @auth_required
 def create_post():
     d = request.json; db = get_db(); pid = uid('mp-')
     if not g.soc: return jsonify({'error':'No active society'}), 400
-    db.execute('INSERT INTO marketplace_posts VALUES(?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)',(pid,g.user['id'],g.soc,d.get('postType'),d['title'],d.get('description'),d.get('price'),None,'active')); db.commit()
+    images = d.get('images') # list of base64 strings or URLs
+    images_json = __import__('json').dumps(images) if images else None
+    db.execute('INSERT INTO marketplace_posts VALUES(?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)',(pid,g.user['id'],g.soc,d.get('postType'),d['title'],d.get('description'),d.get('price'),images_json,'active')); db.commit()
     return jsonify({'success':True,'id':pid})
 
 @app.route('/api/marketplace/<pid>', methods=['DELETE'])
