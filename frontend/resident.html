@@ -554,13 +554,57 @@ function LocksPage({setPage}) {
   </div>;
 }
 
+function NewsPhotoCarousel({images}) {
+  const [idx, setIdx] = useState(0);
+  if(!images||!images.length) return null;
+  return <div style={{position:'relative',borderRadius:14,overflow:'hidden',marginBottom:14,background:'#111'}}>
+    <img src={images[idx]} style={{width:'100%',maxHeight:220,objectFit:'cover',display:'block'}}
+      onError={e=>e.target.style.display='none'}/>
+    {images.length>1&&<>
+      <div style={{position:'absolute',bottom:10,left:0,right:0,display:'flex',justifyContent:'center',gap:5}}>
+        {images.map((_,i)=><div key={i} onClick={()=>setIdx(i)} style={{width:6,height:6,borderRadius:'50%',background:i===idx?'white':'rgba(255,255,255,.4)',cursor:'pointer',transition:'.2s'}}/>)}
+      </div>
+      {idx>0&&<button onClick={()=>setIdx(i=>i-1)} style={{position:'absolute',left:10,top:'50%',transform:'translateY(-50%)',background:'rgba(0,0,0,.5)',border:'none',color:'white',width:32,height:32,borderRadius:'50%',cursor:'pointer',fontSize:16,display:'flex',alignItems:'center',justifyContent:'center'}}>‹</button>}
+      {idx<images.length-1&&<button onClick={()=>setIdx(i=>i+1)} style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',background:'rgba(0,0,0,.5)',border:'none',color:'white',width:32,height:32,borderRadius:'50%',cursor:'pointer',fontSize:16,display:'flex',alignItems:'center',justifyContent:'center'}}>›</button>}
+    </>}
+  </div>;
+}
+
 function NewsPage({setPage}) {
+  const [news, setNews] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(()=>{
+    api('/api/news').then(d=>{ setNews(Array.isArray(d)?d:[]); setLoading(false); });
+  },[]);
+
+  const formatDate = dt => {
+    if(!dt) return '';
+    const d = new Date(dt);
+    return d.toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'});
+  };
+
   return <div>
     <PageHeader title="Society News" onBack={()=>setPage('home')}/>
-    <div className="empty" style={{paddingTop:80}}>
-      <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="var(--text2)" strokeWidth="1.5" style={{marginBottom:16}}><path d="M4 22h16a2 2 0 002-2V4a2 2 0 00-2-2H8a2 2 0 00-2 2v16a2 2 0 01-2 2zm0 0a2 2 0 01-2-2v-9c0-1.1.9-2 2-2h2"/><path d="M18 14h-8M15 18h-5M10 6h8v4h-8z"/></svg>
-      <p>Society announcements coming soon</p>
-    </div>
+    <div className="page">
+    {loading && <div className="empty">Loading...</div>}
+    {!loading && !news.length && <div className="empty" style={{paddingTop:60}}>
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--text2)" strokeWidth="1.5" style={{marginBottom:12}}><path d="M4 22h16a2 2 0 002-2V4a2 2 0 00-2-2H8a2 2 0 00-2 2v16a2 2 0 01-2 2zm0 0a2 2 0 01-2-2v-9c0-1.1.9-2 2-2h2"/><path d="M18 14h-8M15 18h-5M10 6h8v4h-8z"/></svg>
+      <p>No announcements yet</p>
+    </div>}
+    {news.map(n=><div key={n.id} className="card" style={{marginBottom:16}}>
+      {n.is_pinned?<div style={{display:'flex',alignItems:'center',gap:6,fontSize:11,color:'var(--accent2)',fontWeight:600,marginBottom:8}}>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5v6h2v-6h5v-2l-2-2z"/></svg>
+        PINNED
+      </div>:null}
+      <NewsPhotoCarousel images={n.images}/>
+      <div style={{fontWeight:700,fontSize:16,color:'var(--text)',marginBottom:6}}>{n.title}</div>
+      {n.body&&<div style={{fontSize:13,color:'var(--text2)',lineHeight:1.6,marginBottom:10,whiteSpace:'pre-wrap'}}>{n.body}</div>}
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <span style={{fontSize:11,color:'var(--text2)'}}>{n.author_name}</span>
+        <span style={{fontSize:11,color:'var(--text2)'}}>{formatDate(n.created_at)}</span>
+      </div>
+    </div>)}
     </div>
   </div>;
 }

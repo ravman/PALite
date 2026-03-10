@@ -569,6 +569,57 @@ def admin_verify_doc(did): get_db().execute("UPDATE documents SET status='verifi
 def admin_reject_doc(did): get_db().execute("UPDATE documents SET status='rejected' WHERE id=? AND society_id=?",(did,g.soc)); get_db().commit(); return jsonify({'success':True})
 
 # ==================== GUARD ENDPOINTS ====================
+# ─── Society News ──────────────────────────────────────────────────────────────
+import json as _json
+
+@app.route('/api/news')
+@auth_required
+def list_news():
+    if not g.soc: return jsonify([])
+    rows = drs(get_db().execute(
+        "SELECT sn.*, u.name as author_name FROM society_news sn JOIN users u ON sn.author_id=u.id WHERE sn.society_id=? ORDER BY sn.is_pinned DESC, sn.created_at DESC",
+        (g.soc,)).fetchall())
+    for r in rows:
+        try: r['images'] = _json.loads(r['images']) if r.get('images') else []
+        except: r['images'] = []
+    return jsonify(rows)
+
+@app.route('/api/news', methods=['POST'])
+@auth_required
+def create_news():
+    d = request.json; db = get_db()
+    if not g.soc: return jsonify({'error': 'No active society'}), 400
+    # Must be admin or super_admin
+    role = dr(db.execute("SELECT role FROM user_society_roles WHERE user_id=? AND society_id=? AND role IN ('admin','super_admin')", (g.user['id'], g.soc)).fetchone())
+    if not role: return jsonify({'error': 'Admin access required'}), 403
+    nid = uid('news-')
+    images = d.get('images', [])
+    db.execute("INSERT INTO society_news VALUES(?,?,?,?,?,?,?,CURRENT_TIMESTAMP)",
+               (nid, g.soc, g.user['id'], d['title'], d.get('body',''), _json.dumps(images), 1 if d.get('isPinned') else 0))
+    db.commit()
+    return jsonify({'success': True, 'id': nid})
+
+@app.route('/api/news/<nid>', methods=['DELETE'])
+@auth_required
+def delete_news(nid):
+    db = get_db()
+    role = dr(db.execute("SELECT role FROM user_society_roles WHERE user_id=? AND society_id=? AND role IN ('admin','super_admin')", (g.user['id'], g.soc)).fetchone())
+    if not role: return jsonify({'error': 'Admin access required'}), 403
+    db.execute("DELETE FROM society_news WHERE id=? AND society_id=?", (nid, g.soc))
+    db.commit()
+    return jsonify({'success': True})
+
+@app.route('/api/news/<nid>/pin', methods=['POST'])
+@auth_required
+def pin_news(nid):
+    db = get_db()
+    role = dr(db.execute("SELECT role FROM user_society_roles WHERE user_id=? AND society_id=? AND role IN ('admin','super_admin')", (g.user['id'], g.soc)).fetchone())
+    if not role: return jsonify({'error': 'Admin access required'}), 403
+    d = request.json or {}
+    db.execute("UPDATE society_news SET is_pinned=? WHERE id=? AND society_id=?", (1 if d.get('pin') else 0, nid, g.soc))
+    db.commit()
+    return jsonify({'success': True})
+
 @app.route('/api/guard/scan-qr', methods=['POST'])
 @guard_required
 def scan_qr():
