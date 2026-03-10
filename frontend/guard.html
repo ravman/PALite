@@ -83,7 +83,7 @@ function App() {
     <div className="header"><div><h1>GateKeeper Guard</h1><div className="sub">{ctx?.society?.name||'No Society'}</div></div>
       <button className="btn-sm btn-red" style={{border:'none',borderRadius:8,padding:'6px 12px',fontSize:11,cursor:'pointer',fontFamily:'inherit',fontWeight:600,background:'var(--red)',color:'white'}} onClick={()=>{localStorage.removeItem('gk_guard_token');setToken(null);}}>Logout</button></div>
     {page==='scan'&&<ScanPage/>}
-    {page==='entry'&&<EntryPage/>}
+    {page==='entry'&&<EntryPage ctx={ctx}/>}
     {page==='log'&&<LogPage/>}
     {page==='delivery'&&<DeliveryPage/>}
     <div className="nav">
@@ -153,12 +153,12 @@ function ScanPage() {
   </div>;
 }
 
-function EntryPage() {
+function EntryPage({ctx}) {
   const [data,setData]=useState({visitorType:'guest'});
   const [apts,setApts]=useState([]);const [towers,setTowers]=useState([]);const [tower,setTower]=useState('');
   const set=(k,v)=>setData(d=>({...d,[k]:v}));
 
-  useEffect(()=>{api('/api/admin/towers').catch(()=>{}).then(d=>setTowers(d||[]));},[]);
+  useEffect(()=>{const sid=ctx&&ctx.society&&ctx.society.id;if(!sid)return;fetch('/api/lookup/towers?societyId='+sid).then(r=>r.json()).then(d=>setTowers(d||[]));},[ctx]);
   useEffect(()=>{if(tower) fetch('/api/lookup/apartments?towerId='+tower).then(r=>r.json()).then(setApts);},[tower]);
 
   const submit=()=>{
