@@ -156,14 +156,21 @@ function VoiceAssistant({onNavigate, onClose}) {
         body: JSON.stringify({
           model: 'claude-sonnet-4-20250514',
           max_tokens: 200,
-          system: `You are a voice navigation assistant for PA Lite, a residential community app. 
-The app has these pages: home, bookings (space/amenity booking), visitors (gate pass, visitor invites, move requests), marketplace (buy/sell posts), profile (account, vehicles, pets, family), news (society announcements), locks (smart lock control).
-The user will say something and you must respond with ONLY a JSON object like:
-{"action":"navigate","page":"bookings","message":"Taking you to Space Bookings!"}
-or if unclear:
-{"action":"unclear","message":"Sorry, I didn't catch that. Try saying something like 'book a space' or 'invite a visitor'."}
-Valid page values: home, bookings, visitors, marketplace, profile, news, locks
-Keep message friendly, under 10 words. Respond ONLY with the JSON, no other text.`,
+          system: `You are a voice assistant for PA Lite, a residential community app. Extract navigation intent AND any form prefill data from the user's speech.
+
+Pages: home, bookings (space/amenity booking), visitors (gate pass, visitor invites, move requests), marketplace (buy/sell posts), profile (account, vehicles, pets, family), news (society announcements), locks (smart lock control).
+
+Respond ONLY with JSON, no other text. Format:
+{"action":"navigate","page":"bookings","message":"Booking the gym for you!","prefill":{"spaceSearch":"gym","date":"2026-03-11","startTime":"06:00","endTime":"07:00"}}
+
+Prefill fields by page:
+- bookings: spaceSearch (space name/type), date (YYYY-MM-DD), startTime (HH:MM 24hr), endTime (HH:MM 24hr)
+- visitors: visitorName, visitorPhone, visitorType (guest/cab/delivery/daily_help), purpose
+- marketplace: postType (buy/sell), title, description, price
+
+For date/time: today is new Date().toISOString().split('T')[0], resolve relative dates like 'tomorrow', 'next monday', 'at 6pm' into exact values.
+If unclear: {"action":"unclear","message":"Try: book the gym tomorrow at 6pm"}
+Keep message under 10 words. Only include prefill fields the user actually mentioned.`,
           messages: [{role:'user', content: text}]
         })
       });
@@ -173,7 +180,7 @@ Keep message friendly, under 10 words. Respond ONLY with the JSON, no other text
       setResponse(parsed.message || 'Done!');
       setStatus('done');
       if(parsed.action === 'navigate' && parsed.page) {
-        setTimeout(()=>{ onNavigate(parsed.page); onClose(); }, 1200);
+        setTimeout(()=>{ onNavigate(parsed.page, parsed.prefill||{}); onClose(); }, 1200);
       } else {
         setTimeout(onClose, 3000);
       }
@@ -256,6 +263,7 @@ function App() {
   const [page, setPage] = useState('home');
   const [loading, setLoading] = useState(true);
   const [voiceOpen, setVoiceOpen] = useState(false);
+  const [voiceAction, setVoiceAction] = useState(null); // {page, prefill:{}} from voice
 
   const loadMe = useCallback(()=>{
     if(!token) {setLoading(false); return;}
@@ -275,10 +283,12 @@ function App() {
   if(loading) return <div className="login"><h1>PA Lite</h1><p>Loading...</p></div>;
   if(!token) return <LoginPage onLogin={handleLogin}/>;
 
-  const pages = {home:<HomePage ctx={ctx} setPage={setPage}/>,profile:<ProfilePage ctx={ctx} user={user} onLogout={handleLogout} switchApt={switchApt} reload={loadMe} setPage={setPage}/>,bookings:<BookingsPage setPage={setPage}/>,visitors:<VisitorsPage ctx={ctx} setPage={setPage}/>,marketplace:<MarketplacePage setPage={setPage}/>,locks:<LocksPage setPage={setPage}/>,news:<NewsPage setPage={setPage}/>};
+  const pages = {home:<HomePage ctx={ctx} setPage={setPage}/>,profile:<ProfilePage ctx={ctx} user={user} onLogout={handleLogout} switchApt={switchApt} reload={loadMe} setPage={setPage}/>,bookings:<BookingsPage setPage={setPage} prefill={voiceAction?.page==='bookings'?voiceAction.prefill:null}/>,visitors:<VisitorsPage ctx={ctx} setPage={setPage} prefill={voiceAction?.page==='visitors'?voiceAction.prefill:null}/>,marketplace:<MarketplacePage setPage={setPage} prefill={voiceAction?.page==='marketplace'?voiceAction.prefill:null}/>,locks:<LocksPage setPage={setPage}/>,news:<NewsPage setPage={setPage}/>};
 
   return <div className="app">
-    {voiceOpen && <VoiceAssistant onNavigate={setPage} onClose={()=>setVoiceOpen(false)}/>}
+    {voiceOpen && <VoiceAssistant
+      onNavigate={(page, prefill)=>{setPage(page); setVoiceAction({page, prefill: prefill||{}}); setTimeout(()=>setVoiceAction(null), 5000);}}
+      onClose={()=>setVoiceOpen(false)}/>}
     {pages[page] || pages.home}
     <div className="nav">
       <div className="nav-inner">
@@ -591,11 +601,26 @@ function ProfilePage({ctx,user,onLogout,switchApt,reload,setPage}) {
   </div>;
 }
 
-function BookingsPage({setPage}) {
+function BookingsPage({setPage, prefill}) {
   const [spaces, setSpaces] = useState([]);
   const [bookings, setBookings] = useState([]);
   const [tab, setTab] = useState('spaces');
   const [booking, setBooking] = useState(null);
+  const [spaceFilter, setSpaceFilter] = useState('');
+
+  // Apply voice prefill when it arrives
+  useEffect(()=>{
+    if(!prefill) return;
+    if(prefill.spaceSearch) setSpaceFilter(prefill.spaceSearch.toLowerCase());
+    if(prefill.date||prefill.startTime||prefill.endTime||prefill.spaceSearch) {
+      setTab('book');
+      setBooking(b=>({...(b||{}),
+        date: prefill.date||b?.date||'',
+        startTime: prefill.startTime||b?.startTime||'',
+        endTime: prefill.endTime||b?.endTime||'',
+      }));
+    }
+  },[prefill]);
 
   useEffect(()=>{
     api('/api/spaces').then(setSpaces);
@@ -620,11 +645,14 @@ function BookingsPage({setPage}) {
     <PageHeader title="Bookings" onBack={()=>setPage('home')}/>
     <div className="tab-bar"><button className={`tab ${tab==='spaces'?'active':''}`} onClick={()=>setTab('spaces')}>Spaces</button><button className={`tab ${tab==='my'?'active':''}`} onClick={()=>setTab('my')}>My Bookings</button><button className={`tab ${tab==='book'?'active':''}`} onClick={()=>setTab('book')}>Book Now</button></div>
 
-    {tab==='spaces' && spaces.map(s=><div key={s.id} className="card" onClick={()=>{setBooking({spaceId:s.id,date:'',startTime:'',endTime:'',spotNumber:1});setTab('book');}}>
+    {tab==='spaces' && <>
+      <input className="input mb-4" placeholder="Search spaces..." value={spaceFilter} onChange={e=>setSpaceFilter(e.target.value.toLowerCase())} style={{marginBottom:12}}/>
+      {spaces.filter(s=>!spaceFilter||s.name.toLowerCase().includes(spaceFilter)||s.space_type?.toLowerCase().includes(spaceFilter)).map(s=><div key={s.id} className="card" onClick={()=>{setBooking({spaceId:s.id,date:prefill?.date||'',startTime:prefill?.startTime||'',endTime:prefill?.endTime||'',spotNumber:1});setTab('book');}}>
       <div className="flex-between"><div><div className="card-title">{s.name}</div><div className="card-sub">{s.description}</div></div><div style={{textAlign:'right'}}><div style={{fontSize:16,fontWeight:700,color:'var(--accent2)',fontFamily:'Space Mono'}}>Rs.{s.cost_per_hour}/hr</div>
       {s.is_shared?<div className="card-sub">{s.total_spots} spots</div>:null}</div></div>
       <div className="mt-2 card-sub">{s.available_from} - {s.available_to} &bull; Cap: {s.capacity}</div>
     </div>)}
+    </>
 
     {tab==='my' && <>
       {bookings.map(b=><div key={b.id} className="card">
@@ -649,11 +677,25 @@ function BookingsPage({setPage}) {
   </div>;
 }
 
-function VisitorsPage({ctx,setPage}) {
+function VisitorsPage({ctx,setPage,prefill}) {
   const [invites, setInvites] = useState([]);
   const [tab, setTab] = useState('my');
   const [modal, setModal] = useState(false);
   const [moves, setMoves] = useState([]);
+  const [invitePrefill, setInvitePrefill] = useState({});
+
+  useEffect(()=>{
+    if(!prefill) return;
+    const fields = {};
+    if(prefill.visitorName) fields.visitorName = prefill.visitorName;
+    if(prefill.visitorPhone) fields.visitorPhone = prefill.visitorPhone;
+    if(prefill.visitorType) fields.visitorType = prefill.visitorType;
+    if(prefill.purpose) fields.purpose = prefill.purpose;
+    if(Object.keys(fields).length > 0) {
+      setInvitePrefill(fields);
+      setModal('invite');
+    }
+  },[prefill]);
 
   useEffect(()=>{
     api('/api/visitors/my-invitations').then(setInvites);
@@ -687,16 +729,30 @@ function VisitorsPage({ctx,setPage}) {
       {!moves.length && <div className="empty">No move requests</div>}
     </>}
 
-    {modal==='invite' && <FormModal title="Create Invitation" onClose={()=>setModal(false)} onSubmit={createInvite}
+    {modal==='invite' && <FormModal title="Create Invitation" onClose={()=>setModal(false)} onSubmit={createInvite} initialData={invitePrefill}
       fields={[{key:'visitorName',label:'Visitor Name'},{key:'visitorPhone',label:'Phone'},{key:'visitorType',label:'Type',type:'select',options:['guest','cab','delivery','daily_help','other']},{key:'purpose',label:'Purpose'},{key:'validFrom',label:'Valid From',type:'datetime-local'},{key:'validTo',label:'Valid To',type:'datetime-local'}]}/>}
     {modal==='move' && <FormModal title="Move Request" onClose={()=>setModal(false)} onSubmit={createMove}
       fields={[{key:'moveType',label:'Type',type:'select',options:['move_in','move_out']},{key:'tentativeStart',label:'Start Date',type:'date'},{key:'tentativeEnd',label:'End Date',type:'date'},{key:'notes',label:'Notes'}]}/>}
   </div>;
 }
 
-function MarketplacePage({setPage}) {
+function MarketplacePage({setPage, prefill}) {
   const [posts, setPosts] = useState([]);
   const [modal, setModal] = useState(false);
+  const [marketPrefill, setMarketPrefill] = useState({});
+
+  useEffect(()=>{
+    if(!prefill) return;
+    const fields = {};
+    if(prefill.postType) fields.postType = prefill.postType;
+    if(prefill.title) fields.title = prefill.title;
+    if(prefill.description) fields.description = prefill.description;
+    if(prefill.price) fields.price = prefill.price;
+    if(Object.keys(fields).length > 0) {
+      setMarketPrefill(fields);
+      setModal(true);
+    }
+  },[prefill]);
 
   useEffect(()=>{api('/api/marketplace').then(setPosts);},[]);
 
@@ -711,22 +767,26 @@ function MarketplacePage({setPage}) {
       <div style={{textAlign:'right'}}><div style={{fontSize:16,fontWeight:700,color:'var(--green)',fontFamily:'Space Mono'}}>Rs.{p.price}</div><span className={`badge badge-${p.post_type==='sell'?'purple':'orange'}`}>{p.post_type}</span></div></div>
     </div>)}
     {!posts.length && <div className="empty">No posts in your society</div>}
-    {modal && <FormModal title="Create Post" onClose={()=>setModal(false)} onSubmit={create}
+    {modal && <FormModal title="Create Post" onClose={()=>setModal(false)} onSubmit={create} initialData={marketPrefill}
       fields={[{key:'postType',label:'Type',type:'select',options:['buy','sell']},{key:'title',label:'Title'},{key:'description',label:'Description'},{key:'price',label:'Price',type:'number'}]}/>}
     </div>
   </div>;
 }
 
-function FormModal({title, onClose, onSubmit, fields}) {
-  const [data, setData] = useState({});
+function FormModal({title, onClose, onSubmit, fields, initialData}) {
+  const [data, setData] = useState(initialData||{});
   const set = (k,v)=>setData(d=>({...d,[k]:v}));
   return <div className="modal-overlay" onClick={onClose}>
     <div className="modal" onClick={e=>e.stopPropagation()}>
       <h2>{title}</h2>
+      {initialData&&Object.keys(initialData).length>0&&<div style={{display:'flex',alignItems:'center',gap:6,marginBottom:12,fontSize:12,color:'var(--accent2)'}}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/></svg>
+        Voice filled {Object.keys(initialData).length} field{Object.keys(initialData).length>1?'s':''}
+      </div>}
       {fields.map(f=><div key={f.key} className="form-group">
         <label className="label">{f.label}</label>
-        {f.type==='select' ? <select className="input" value={data[f.key]||''} onChange={e=>set(f.key,e.target.value)}><option value="">Select</option>{f.options.map(o=><option key={o} value={o}>{o}</option>)}</select>
-        : <input className="input" type={f.type||'text'} value={data[f.key]||''} onChange={e=>set(f.key,e.target.value)} placeholder={f.label}/>}
+        {f.type==='select' ? <select className="input" value={data[f.key]||''} onChange={e=>set(f.key,e.target.value)} style={initialData?.[f.key]?{borderColor:'var(--accent)',background:'rgba(108,92,231,0.08)'}:{}}><option value="">Select</option>{f.options.map(o=><option key={o} value={o}>{o}</option>)}</select>
+        : <input className="input" type={f.type||'text'} value={data[f.key]||''} onChange={e=>set(f.key,e.target.value)} placeholder={f.label} style={initialData?.[f.key]?{borderColor:'var(--accent)',background:'rgba(108,92,231,0.08)'}:{}}/>}
       </div>)}
       <div className="flex" style={{gap:10,marginTop:16}}>
         <button className="btn btn-primary" style={{flex:1}} onClick={()=>onSubmit(data)}>Submit</button>
