@@ -3,6 +3,8 @@ from functools import wraps
 from flask import Flask, request, jsonify, send_from_directory, g
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from schema import init_db, get_conn, dr, drs, uid
+from push import (notify_visitor_arrived, notify_visitor_decision,
+                  notify_news_published, notify_booking_confirmed)
 
 app = Flask(__name__, static_folder='../frontend', static_url_path='')
 app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024
@@ -263,11 +265,15 @@ def pay_booking(bk_id):
     bk = dr(db.execute('SELECT * FROM bookings WHERE id=? AND user_id=?',(bk_id,g.user['id'])).fetchone())
     if not bk: return jsonify({'error':'Booking not found'}), 404
     inv = dr(db.execute('SELECT * FROM invoices WHERE booking_id=?',(bk_id,)).fetchone())
+    space = dr(db.execute('SELECT name FROM spaces WHERE id=?',(bk['space_id'],)).fetchone())
     pay_id = uid('pay-'); txn = 'TXN_' + uuid.uuid4().hex[:12].upper()
     db.execute('INSERT INTO payments VALUES(?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)',(pay_id,inv['id'],g.user['id'],g.soc,inv['amount'],'gateway',txn,'success'))
     db.execute("UPDATE invoices SET status='paid' WHERE id=?",(inv['id'],))
     db.execute("UPDATE bookings SET status='confirmed' WHERE id=?",(bk_id,))
     db.commit()
+    notify_booking_confirmed(db, g.user['id'],
+        space['name'] if space else 'Space',
+        bk['booking_date'], bk_id)
     return jsonify({'success':True,'paymentId':pay_id,'transactionId':txn})
 
 @app.route('/api/bookings/my')
@@ -285,7 +291,22 @@ def cancel_booking(bk_id):
     db.commit()
     return jsonify({'success':True})
 
-@app.route('/api/visitors/invite', methods=['POST'])
+@app.route('/api/auth/push-token', methods=['POST'])
+@auth_required
+def register_push_token():
+    token = request.json.get('token','').strip()
+    platform = request.json.get('platform','')
+    if not token or not token.startswith('ExponentPushToken'):
+        return jsonify({'error':'Invalid Expo push token'}), 400
+    db = get_db(); tid = uid('pt-')
+    # Upsert: delete old record for same token, insert fresh
+    db.execute("DELETE FROM push_tokens WHERE token=?", (token,))
+    db.execute("INSERT INTO push_tokens VALUES(?,?,?,?,CURRENT_TIMESTAMP)",
+               (tid, g.user['id'], token, platform))
+    db.commit()
+    return jsonify({'success': True})
+
+
 @auth_required
 def invite_visitor():
     d = request.json; db = get_db()
@@ -311,11 +332,25 @@ def pending_approvals():
 
 @app.route('/api/visitors/<vid>/approve', methods=['POST'])
 @auth_required
-def approve_visitor(vid): get_db().execute("UPDATE visitor_entries SET approval_status='approved' WHERE id=?",(vid,)); get_db().commit(); return jsonify({'success':True})
+def approve_visitor(vid):
+    db = get_db()
+    entry = dr(db.execute("SELECT * FROM visitor_entries WHERE id=?", (vid,)).fetchone())
+    db.execute("UPDATE visitor_entries SET approval_status='approved' WHERE id=?", (vid,))
+    db.commit()
+    if entry:
+        notify_visitor_decision(db, g.user['id'], entry['visitor_name'], True, vid)
+    return jsonify({'success': True})
 
 @app.route('/api/visitors/<vid>/reject', methods=['POST'])
 @auth_required
-def reject_visitor(vid): get_db().execute("UPDATE visitor_entries SET approval_status='rejected' WHERE id=?",(vid,)); get_db().commit(); return jsonify({'success':True})
+def reject_visitor(vid):
+    db = get_db()
+    entry = dr(db.execute("SELECT * FROM visitor_entries WHERE id=?", (vid,)).fetchone())
+    db.execute("UPDATE visitor_entries SET approval_status='rejected' WHERE id=?", (vid,))
+    db.commit()
+    if entry:
+        notify_visitor_decision(db, g.user['id'], entry['visitor_name'], False, vid)
+    return jsonify({'success': True})
 
 @app.route('/api/visitors/delivery/<did>/approve', methods=['POST'])
 @auth_required
@@ -589,7 +624,6 @@ def list_news():
 def create_news():
     d = request.json; db = get_db()
     if not g.soc: return jsonify({'error': 'No active society'}), 400
-    # Must be admin or super_admin
     role = dr(db.execute("SELECT role FROM user_society_roles WHERE user_id=? AND society_id=? AND role IN ('admin','super_admin')", (g.user['id'], g.soc)).fetchone())
     if not role: return jsonify({'error': 'Admin access required'}), 403
     nid = uid('news-')
@@ -597,6 +631,7 @@ def create_news():
     db.execute("INSERT INTO society_news VALUES(?,?,?,?,?,?,?,CURRENT_TIMESTAMP)",
                (nid, g.soc, g.user['id'], d['title'], d.get('body',''), _json.dumps(images), 1 if d.get('isPinned') else 0))
     db.commit()
+    notify_news_published(db, g.soc, d['title'], nid)
     return jsonify({'success': True, 'id': nid})
 
 @app.route('/api/news/<nid>', methods=['DELETE'])
@@ -636,11 +671,20 @@ def scan_qr():
 @guard_required
 def create_entry():
     d = request.json; db = get_db(); eid = uid('ve-')
-    db.execute("INSERT INTO visitor_entries VALUES(?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP,NULL,?,?,CURRENT_TIMESTAMP)",(eid,d.get('invitationId'),d['visitorName'],d.get('visitorPhone'),d.get('visitorType','guest'),d.get('apartmentId'),g.soc,g.user['id'],'pending',d.get('notes')))
+    visitor_name = d['visitorName']
+    visitor_type = d.get('visitorType','guest')
+    apartment_id = d.get('apartmentId')
+    db.execute("INSERT INTO visitor_entries VALUES(?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP,NULL,?,?,CURRENT_TIMESTAMP)",
+               (eid,d.get('invitationId'),visitor_name,d.get('visitorPhone'),visitor_type,apartment_id,g.soc,g.user['id'],'pending',d.get('notes')))
     if d.get('invitationId'): db.execute("UPDATE visitor_invitations SET status='used' WHERE id=?",(d['invitationId'],))
-    for apt_id in d.get('deliveryApartments',[]):
+    delivery_apts = d.get('deliveryApartments',[])
+    for apt_id in delivery_apts:
         db.execute('INSERT INTO delivery_apartments VALUES(?,?,?,?,?)',(uid('da-'),eid,apt_id,'pending',None))
     db.commit()
+    # Notify residents — single apt or all delivery apts
+    apts_to_notify = delivery_apts if delivery_apts else ([apartment_id] if apartment_id else [])
+    for apt_id in apts_to_notify:
+        notify_visitor_arrived(db, apt_id, visitor_name, visitor_type, eid)
     return jsonify({'success':True,'entryId':eid})
 
 @app.route('/api/guard/entries')
