@@ -20,7 +20,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .header .ctx span{color:var(--accent2);font-weight:600}
 .nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;z-index:100;pointer-events:none}
 .nav-inner{display:flex;align-items:flex-end;justify-content:space-between;padding:0 32px 16px;pointer-events:all}
-.nav-pill{background:rgba(20,20,31,0.96);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.08);border-radius:50px;display:flex;align-items:center;justify-content:space-between;padding:10px 28px;gap:32px}
+.nav-pill{background:var(--nav-bg,rgba(20,20,31,0.96));backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.08);border-radius:50px;display:flex;align-items:center;justify-content:space-between;padding:10px 28px;gap:32px}
 .nav-btn{background:none;border:none;color:var(--text2);cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:9px;font-family:inherit;font-weight:500;transition:.2s;padding:4px 8px;border-radius:20px}
 .nav-btn.active{color:white}
 .nav-btn svg{width:22px;height:22px}
@@ -141,9 +141,117 @@ select.input{appearance:none;cursor:pointer}
 </head>
 <body>
 <div id="root"></div>
+<script>
+// Apply saved skin immediately before React renders — prevents flash
+(function(){
+  var s=localStorage.getItem('gk_skin');
+  if(!s)return;
+  try{var sk=JSON.parse(localStorage.getItem('gk_skin_vars'));if(sk){var el=document.createElement('style');el.id='skin-vars';el.textContent=':root{'+sk+'}';document.head.appendChild(el);}}catch(e){}
+})();
+</script>
 <script type="text/babel">
-const {useState,useEffect,useCallback} = React;
+const {useState,useEffect,useCallback,useRef} = React;
 const API = '';
+
+// ─── Skin definitions ─────────────────────────────────────────────────────────
+const SKINS = {
+  midnight: {
+    name: 'Midnight',
+    desc: 'Classic deep dark',
+    preview: ['#0a0a0f','#6c5ce7'],
+    vars: {
+      '--bg':'#0a0a0f','--card':'#14141f','--card2':'#1a1a2e',
+      '--accent':'#6c5ce7','--accent2':'#a29bfe',
+      '--green':'#00b894','--red':'#e17055','--orange':'#fdcb6e',
+      '--text':'#e8e8f0','--text2':'#8888a0','--border':'#2a2a3e','--radius':'14px',
+      '--nav-bg':'rgba(20,20,31,0.96)',
+      '--home-bg':'#0a0a0f',
+      '--tile-overlay':'linear-gradient(135deg, rgba(108,92,231,0.15), transparent)',
+    }
+  },
+  aurora: {
+    name: 'Aurora',
+    desc: 'Northern lights teal',
+    preview: ['#040d0d','#00c9a7'],
+    vars: {
+      '--bg':'#040d0d','--card':'#0a1a1a','--card2':'#0f2020',
+      '--accent':'#00c9a7','--accent2':'#5eead4',
+      '--green':'#34d399','--red':'#f87171','--orange':'#fbbf24',
+      '--text':'#e2f4f1','--text2':'#6b9e98','--border':'#1a3535','--radius':'14px',
+      '--nav-bg':'rgba(10,26,26,0.97)',
+      '--home-bg':'#040d0d',
+      '--tile-overlay':'linear-gradient(135deg, rgba(0,201,167,0.12), transparent)',
+    }
+  },
+  sakura: {
+    name: 'Sakura',
+    desc: 'Soft rose & blush',
+    preview: ['#0f080d','#e879a0'],
+    vars: {
+      '--bg':'#0f080d','--card':'#1e0f18','--card2':'#271522',
+      '--accent':'#e879a0','--accent2':'#f9a8d4',
+      '--green':'#4ade80','--red':'#fb7185','--orange':'#fde68a',
+      '--text':'#fce7f3','--text2':'#9d7090','--border':'#3d1e30','--radius':'16px',
+      '--nav-bg':'rgba(30,15,24,0.97)',
+      '--home-bg':'#0f080d',
+      '--tile-overlay':'linear-gradient(135deg, rgba(232,121,160,0.12), transparent)',
+    }
+  },
+  solar: {
+    name: 'Solar',
+    desc: 'Warm amber & gold',
+    preview: ['#0d0800','#f59e0b'],
+    vars: {
+      '--bg':'#0d0800','--card':'#1a1000','--card2':'#221600',
+      '--accent':'#f59e0b','--accent2':'#fcd34d',
+      '--green':'#84cc16','--red':'#ef4444','--orange':'#fb923c',
+      '--text':'#fef3c7','--text2':'#92794a','--border':'#3d2e00','--radius':'12px',
+      '--nav-bg':'rgba(26,16,0,0.97)',
+      '--home-bg':'#0d0800',
+      '--tile-overlay':'linear-gradient(135deg, rgba(245,158,11,0.12), transparent)',
+    }
+  },
+  glacier: {
+    name: 'Glacier',
+    desc: 'Crisp icy blue',
+    preview: ['#05080f','#3b82f6'],
+    vars: {
+      '--bg':'#05080f','--card':'#0c1220','--card2':'#111b2e',
+      '--accent':'#3b82f6','--accent2':'#93c5fd',
+      '--green':'#22d3ee','--red':'#f87171','--orange':'#fb923c',
+      '--text':'#e0eaff','--text2':'#6080a0','--border':'#1e2d44','--radius':'14px',
+      '--nav-bg':'rgba(12,18,32,0.97)',
+      '--home-bg':'#05080f',
+      '--tile-overlay':'linear-gradient(135deg, rgba(59,130,246,0.12), transparent)',
+    }
+  },
+  obsidian: {
+    name: 'Obsidian',
+    desc: 'Pure black & white',
+    preview: ['#000000','#ffffff'],
+    vars: {
+      '--bg':'#000000','--card':'#0f0f0f','--card2':'#161616',
+      '--accent':'#ffffff','--accent2':'#cccccc',
+      '--green':'#4ade80','--red':'#f87171','--orange':'#fbbf24',
+      '--text':'#f5f5f5','--text2':'#666666','--border':'#222222','--radius':'12px',
+      '--nav-bg':'rgba(10,10,10,0.98)',
+      '--home-bg':'#000000',
+      '--tile-overlay':'linear-gradient(135deg, rgba(255,255,255,0.06), transparent)',
+    }
+  },
+};
+
+const DEFAULT_SKIN = 'midnight';
+
+function applyAndPersistSkin(skinKey) {
+  const skin = SKINS[skinKey] || SKINS[DEFAULT_SKIN];
+  const cssVars = Object.entries(skin.vars).map(([k,v])=>`${k}:${v}`).join(';');
+  let el = document.getElementById('skin-vars');
+  if (!el) { el = document.createElement('style'); el.id = 'skin-vars'; document.head.appendChild(el); }
+  el.textContent = `:root{${cssVars}}`;
+  localStorage.setItem('gk_skin', skinKey);
+  localStorage.setItem('gk_skin_vars', cssVars);
+}
 
 function api(path, opts={}) {
   const token = localStorage.getItem('gk_token');
@@ -373,6 +481,10 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [voiceAction, setVoiceAction] = useState(null);
+  const [currentSkin, setCurrentSkin] = useState(localStorage.getItem('gk_skin') || DEFAULT_SKIN);
+
+  // Apply skin on mount and whenever it changes
+  useEffect(()=>{ applyAndPersistSkin(currentSkin); }, [currentSkin]);
   const [signupState, setSignupState] = useState(null);
   const [splashVisible, setSplashVisible] = useState(true);
   const splashDoneRef = React.useRef(false); // tracks whether min splash time has passed
@@ -422,7 +534,7 @@ function App() {
     if(resident && (resident.status==='pending' || resident.status==='rejected')) {
       content = <PendingScreen resident={resident} user={user} onLogout={handleLogout} onRefresh={loadMe}/>;
     } else {
-      const pages = {home:<HomePage ctx={ctx} setPage={setPage}/>,profile:<ProfilePage ctx={ctx} user={user} onLogout={handleLogout} switchApt={switchApt} reload={loadMe} setPage={setPage}/>,bookings:<BookingsPage setPage={setPage} prefill={voiceAction?.page==='bookings'?voiceAction.prefill:null}/>,visitors:<VisitorsPage ctx={ctx} setPage={setPage} prefill={voiceAction?.page==='visitors'?voiceAction.prefill:null}/>,marketplace:<MarketplacePage setPage={setPage} prefill={voiceAction?.page==='marketplace'?voiceAction.prefill:null}/>,payments:<PaymentsPage setPage={setPage}/>,locks:<LocksPage setPage={setPage}/>,news:<NewsPage setPage={setPage}/>,admin:<AdminPanelPage setPage={setPage} ctx={ctx}/>};
+      const pages = {home:<HomePage ctx={ctx} setPage={setPage}/>,profile:<ProfilePage ctx={ctx} user={user} onLogout={handleLogout} switchApt={switchApt} reload={loadMe} setPage={setPage} currentSkin={currentSkin} setSkin={setCurrentSkin}/>,bookings:<BookingsPage setPage={setPage} prefill={voiceAction?.page==='bookings'?voiceAction.prefill:null}/>,visitors:<VisitorsPage ctx={ctx} setPage={setPage} prefill={voiceAction?.page==='visitors'?voiceAction.prefill:null}/>,marketplace:<MarketplacePage setPage={setPage} prefill={voiceAction?.page==='marketplace'?voiceAction.prefill:null}/>,payments:<PaymentsPage setPage={setPage}/>,locks:<LocksPage setPage={setPage}/>,news:<NewsPage setPage={setPage}/>,admin:<AdminPanelPage setPage={setPage} ctx={ctx}/>};
       content = <div className="app">
         {voiceOpen && <VoiceAssistant
           onNavigate={(page, prefill)=>{setPage(page); setVoiceAction({page, prefill: prefill||{}}); setTimeout(()=>setVoiceAction(null), 5000);}}
@@ -1642,7 +1754,7 @@ function NewsPage({setPage}) {
   </div>;
 }
 
-function ProfilePage({ctx,user,onLogout,switchApt,reload,setPage}) {
+function ProfilePage({ctx,user,onLogout,switchApt,reload,setPage,currentSkin,setSkin}) {
   const [profile, setProfile] = useState(null);
   const [tab, setTab] = useState('info');
   const [modal, setModal] = useState(null);
@@ -1667,7 +1779,7 @@ function ProfilePage({ctx,user,onLogout,switchApt,reload,setPage}) {
     </>}
 
     <div className="tab-bar mt-4">
-      {['info','vehicles','pets','family','invoices'].map(t=><button key={t} className={`tab ${tab===t?'active':''}`} onClick={()=>setTab(t)}>{t.charAt(0).toUpperCase()+t.slice(1)}</button>)}
+      {['info','vehicles','pets','family','appearance'].map(t=><button key={t} className={`tab ${tab===t?'active':''}`} onClick={()=>setTab(t)}>{t.charAt(0).toUpperCase()+t.slice(1)}</button>)}
     </div>
 
     {tab==='vehicles' && <div>
@@ -1699,6 +1811,54 @@ function ProfilePage({ctx,user,onLogout,switchApt,reload,setPage}) {
       {ctx?.resident && <div className="mt-2"><span className={`badge badge-${ctx.resident.status==='approved'?'green':'orange'}`}>{ctx.resident.resident_type} - {ctx.resident.status}</span></div>}
       </div>
       <button className="btn btn-secondary mt-4" style={{width:'100%'}} onClick={onLogout}>Sign Out</button>
+    </div>}
+
+    {tab==='appearance' && <div>
+      <div style={{marginBottom:16}}>
+        <div style={{fontSize:13,fontWeight:700,color:'var(--text)',marginBottom:4}}>App Theme</div>
+        <div style={{fontSize:12,color:'var(--text2)'}}>Pick a look that feels like home.</div>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10}}>
+        {Object.entries(SKINS).map(([key,skin])=>{
+          const active = currentSkin===key;
+          return <div key={key} onClick={()=>setSkin(key)} style={{cursor:'pointer',borderRadius:16,overflow:'hidden',
+              border:`2px solid ${active?'var(--accent)':'var(--border)'}`,
+              background:'var(--card)',transition:'border-color .2s,transform .15s',
+              transform:active?'scale(1.04)':'scale(1)'}}>
+            {/* Swatch preview */}
+            <div style={{height:64,background:`linear-gradient(135deg, ${skin.preview[0]} 0%, ${skin.preview[1]} 100%)`,position:'relative',display:'flex',alignItems:'center',justifyContent:'center'}}>
+              {/* Mini UI mockup */}
+              <div style={{position:'absolute',inset:0,display:'flex',flexDirection:'column',padding:8,gap:4}}>
+                <div style={{height:6,borderRadius:3,background:skin.preview[1],opacity:0.9,width:'60%'}}/>
+                <div style={{height:4,borderRadius:2,background:'rgba(255,255,255,0.3)',width:'40%'}}/>
+                <div style={{flex:1,display:'flex',gap:4,alignItems:'flex-end'}}>
+                  <div style={{flex:1,borderRadius:4,background:'rgba(255,255,255,0.12)',height:'70%'}}/>
+                  <div style={{flex:1,borderRadius:4,background:'rgba(255,255,255,0.12)',height:'90%'}}/>
+                </div>
+              </div>
+              {active && <div style={{position:'absolute',top:6,right:6,width:16,height:16,borderRadius:'50%',
+                  background:skin.preview[1],display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:700,color:skin.preview[0]}}>✓</div>}
+            </div>
+            {/* Label */}
+            <div style={{padding:'8px 10px'}}>
+              <div style={{fontSize:12,fontWeight:700,color:'var(--text)',lineHeight:1}}>{skin.name}</div>
+              <div style={{fontSize:10,color:'var(--text2)',marginTop:3,lineHeight:1.3}}>{skin.desc}</div>
+            </div>
+          </div>;
+        })}
+      </div>
+
+      {/* Active skin preview bar */}
+      <div style={{marginTop:20,padding:'14px 16px',borderRadius:14,
+          background:`linear-gradient(135deg, ${SKINS[currentSkin].preview[0]}, ${SKINS[currentSkin].preview[1]})`,
+          border:'1px solid var(--border)',display:'flex',alignItems:'center',gap:12}}>
+        <div style={{width:36,height:36,borderRadius:10,background:'rgba(255,255,255,0.15)',
+            display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>🎨</div>
+        <div>
+          <div style={{fontSize:13,fontWeight:700,color:'white'}}>{SKINS[currentSkin].name} is active</div>
+          <div style={{fontSize:11,color:'rgba(255,255,255,0.6)',marginTop:2}}>{SKINS[currentSkin].desc} · applied instantly</div>
+        </div>
+      </div>
     </div>}
 
     {modal==='vehicle' && <FormModal title="Add Vehicle" onClose={()=>setModal(null)} onSubmit={addVehicle}
