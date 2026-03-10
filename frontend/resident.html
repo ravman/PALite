@@ -58,6 +58,19 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .label{font-size:12px;color:var(--text2);margin-bottom:6px;display:block}
 .form-group{margin-bottom:14px}
 select.input{appearance:none;cursor:pointer}
+/* Space booking grid */
+.space-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:16px 20px 20px}
+.space-card{border-radius:18px;overflow:hidden;cursor:pointer;position:relative;aspect-ratio:1;background:#1a1a2e;transition:transform .18s,box-shadow .18s}
+.space-card:active{transform:scale(.96)}
+.space-card-img{width:100%;height:100%;object-fit:cover;display:block}
+.space-card-img-placeholder{width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:40px;background:linear-gradient(135deg,#1e1e30,#2a2a42)}
+.space-card-footer{position:absolute;bottom:0;left:0;right:0;padding:10px 12px 12px;background:linear-gradient(to top,rgba(0,0,0,.85) 0%,rgba(0,0,0,0) 100%)}
+.space-card-name{font-size:14px;font-weight:700;color:white;line-height:1.2;text-shadow:0 1px 4px rgba(0,0,0,.5)}
+.space-card-price{font-size:11px;color:rgba(255,255,255,.75);font-family:'Space Mono',monospace;margin-top:2px}
+.space-search-wrap{padding:16px 20px 4px;position:relative}
+.space-search-wrap svg{position:absolute;left:32px;top:50%;transform:translateY(-50%);width:16px;height:16px;stroke:var(--text2);pointer-events:none}
+.space-search-wrap input{padding-left:38px}
+.voice-hint{padding:16px 20px 8px;font-size:12px;color:var(--text2);line-height:1.6}
 /* QR Code */
 .qr-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.92);backdrop-filter:blur(12px);z-index:600;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px}
 .qr-modal-card{background:#fff;border-radius:24px;padding:28px;display:flex;flex-direction:column;align-items:center;gap:16px;max-width:320px;width:100%}
@@ -620,6 +633,70 @@ function ProfilePage({ctx,user,onLogout,switchApt,reload,setPage}) {
   </div>;
 }
 
+// Photo map by space_type and name keywords
+const SPACE_PHOTOS = {
+  party_hall:   'https://images.unsplash.com/photo-1519167758481-83f550bb49b3?w=600&q=80',
+  work_area:    'https://images.unsplash.com/photo-1497366216548-37526070297c?w=600&q=80',
+  common_room:  'https://images.unsplash.com/photo-1542744094-3a31f272c490?w=600&q=80',
+  gym:          'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=600&q=80',
+  pool:         'https://images.unsplash.com/photo-1575429198097-0414ec08e8cd?w=600&q=80',
+  court:        'https://images.unsplash.com/photo-1546519638-68e109498ffc?w=600&q=80',
+  clubhouse:    'https://images.unsplash.com/photo-1519167758481-83f550bb49b3?w=600&q=80',
+  default:      'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=600&q=80',
+};
+
+function getSpacePhoto(space) {
+  const n = (space.name + ' ' + (space.space_type||'')).toLowerCase();
+  if(n.includes('gym') || n.includes('fitness')) return SPACE_PHOTOS.gym;
+  if(n.includes('pool') || n.includes('swim')) return SPACE_PHOTOS.pool;
+  if(n.includes('court') || n.includes('basket') || n.includes('tennis')) return SPACE_PHOTOS.court;
+  if(n.includes('club')) return SPACE_PHOTOS.clubhouse;
+  if(n.includes('hall') || n.includes('party') || n.includes('event')) return SPACE_PHOTOS.party_hall;
+  if(n.includes('work') || n.includes('desk') || n.includes('co-work') || n.includes('cowork')) return SPACE_PHOTOS.work_area;
+  if(n.includes('meeting') || n.includes('study') || n.includes('room')) return SPACE_PHOTOS.common_room;
+  return SPACE_PHOTOS[space.space_type] || SPACE_PHOTOS.default;
+}
+
+function SpaceGrid({spaces, spaceFilter, setSpaceFilter, onSelect}) {
+  const filtered = spaces.filter(s =>
+    !spaceFilter ||
+    s.name.toLowerCase().includes(spaceFilter) ||
+    (s.space_type||'').toLowerCase().includes(spaceFilter)
+  );
+
+  return <div>
+    <div className="space-search-wrap">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+      <input className="input" placeholder="Search spaces..." value={spaceFilter}
+        onChange={e=>setSpaceFilter(e.target.value.toLowerCase())}/>
+    </div>
+
+    <div className="space-grid">
+      {filtered.map(s=>(
+        <div key={s.id} className="space-card" onClick={()=>onSelect(s)}>
+          <img
+            className="space-card-img"
+            src={getSpacePhoto(s)}
+            alt={s.name}
+            onError={e=>{e.target.style.display='none';e.target.nextSibling.style.display='flex';}}
+          />
+          <div className="space-card-img-placeholder" style={{display:'none'}}>🏢</div>
+          <div className="space-card-footer">
+            <div className="space-card-name">{s.name}</div>
+            <div className="space-card-price">Rs.{s.cost_per_hour}/hr · {s.available_from}–{s.available_to}</div>
+          </div>
+        </div>
+      ))}
+    </div>
+
+    <div className="voice-hint">
+      Press the mic and mention all your booking details like event date, time, duration and the occasion
+    </div>
+  </div>;
+}
+
 function BookingsPage({setPage, prefill}) {
   const [spaces, setSpaces] = useState([]);
   const [bookings, setBookings] = useState([]);
@@ -661,17 +738,10 @@ function BookingsPage({setPage, prefill}) {
   };
 
   return <div>
-    <PageHeader title="Bookings" onBack={()=>setPage('home')}/>
-    <div className="tab-bar"><button className={`tab ${tab==='spaces'?'active':''}`} onClick={()=>setTab('spaces')}>Spaces</button><button className={`tab ${tab==='my'?'active':''}`} onClick={()=>setTab('my')}>My Bookings</button><button className={`tab ${tab==='book'?'active':''}`} onClick={()=>setTab('book')}>Book Now</button></div>
+    <PageHeader title="Space Booking" onBack={()=>setPage('home')}/>
+    <div className="tab-bar"><button className={`tab ${tab==='spaces'?'active':''}`} onClick={()=>setTab('spaces')}>Browse</button><button className={`tab ${tab==='my'?'active':''}`} onClick={()=>setTab('my')}>My Bookings</button>{tab==='book'&&<button className={`tab active`}>Book Now</button>}</div>
 
-    {tab==='spaces' && <>
-      <input className="input mb-4" placeholder="Search spaces..." value={spaceFilter} onChange={e=>setSpaceFilter(e.target.value.toLowerCase())} style={{marginBottom:12}}/>
-      {spaces.filter(s=>!spaceFilter||s.name.toLowerCase().includes(spaceFilter)||s.space_type?.toLowerCase().includes(spaceFilter)).map(s=><div key={s.id} className="card" onClick={()=>{setBooking({spaceId:s.id,date:prefill?.date||'',startTime:prefill?.startTime||'',endTime:prefill?.endTime||'',spotNumber:1});setTab('book');}}>
-      <div className="flex-between"><div><div className="card-title">{s.name}</div><div className="card-sub">{s.description}</div></div><div style={{textAlign:'right'}}><div style={{fontSize:16,fontWeight:700,color:'var(--accent2)',fontFamily:'Space Mono'}}>Rs.{s.cost_per_hour}/hr</div>
-      {s.is_shared?<div className="card-sub">{s.total_spots} spots</div>:null}</div></div>
-      <div className="mt-2 card-sub">{s.available_from} - {s.available_to} &bull; Cap: {s.capacity}</div>
-    </div>)}
-    </>
+    {tab==='spaces' && <SpaceGrid spaces={spaces} spaceFilter={spaceFilter} setSpaceFilter={setSpaceFilter} onSelect={s=>{setBooking({spaceId:s.id,date:prefill?.date||'',startTime:prefill?.startTime||'',endTime:prefill?.endTime||'',spotNumber:1});setTab('book');}}/>}
 
     {tab==='my' && <>
       {bookings.map(b=><div key={b.id} className="card">
