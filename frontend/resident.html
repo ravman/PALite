@@ -57,6 +57,19 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .label{font-size:12px;color:var(--text2);margin-bottom:6px;display:block}
 .form-group{margin-bottom:14px}
 select.input{appearance:none;cursor:pointer}
+/* Voice assistant */
+.voice-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.85);backdrop-filter:blur(16px);z-index:500;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px}
+.voice-orb{width:96px;height:96px;border-radius:50%;background:white;display:flex;align-items:center;justify-content:center;position:relative}
+.voice-orb svg{width:40px;height:40px;color:#0a0a0f}
+.voice-orb.listening{animation:orbPulse 1.2s ease-in-out infinite}
+.voice-orb.thinking{background:linear-gradient(135deg,#6c5ce7,#a29bfe);animation:orbSpin 1s linear infinite}
+@keyframes orbPulse{0%,100%{box-shadow:0 0 0 0 rgba(255,255,255,0.4)}50%{box-shadow:0 0 0 20px rgba(255,255,255,0)}}
+@keyframes orbSpin{from{filter:hue-rotate(0deg)}to{filter:hue-rotate(360deg)}}
+.voice-status{font-size:18px;font-weight:600;color:white;text-align:center}
+.voice-transcript{font-size:14px;color:rgba(255,255,255,0.6);text-align:center;max-width:280px;min-height:40px;font-style:italic}
+.voice-response{font-size:15px;color:rgba(255,255,255,0.9);text-align:center;max-width:300px;background:rgba(255,255,255,0.08);padding:12px 20px;border-radius:16px;border:1px solid rgba(255,255,255,0.12)}
+.voice-cancel{background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);color:white;padding:10px 28px;border-radius:30px;font-size:14px;cursor:pointer;font-family:inherit;margin-top:8px}
+.nav-center.active-voice{background:linear-gradient(135deg,#6c5ce7,#a29bfe);box-shadow:0 4px 20px rgba(108,92,231,0.5)}
 .login{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:40px 20px;text-align:center}
 .login h1{font-size:32px;margin-bottom:8px;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
 .login p{color:var(--text2);margin-bottom:32px}
@@ -117,12 +130,132 @@ const Icons = {
   plus: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>,
 };
 
+function VoiceAssistant({onNavigate, onClose}) {
+  const [status, setStatus] = useState('listening'); // listening | thinking | done | error
+  const [transcript, setTranscript] = useState('');
+  const [response, setResponse] = useState('');
+  const recognitionRef = React.useRef(null);
+
+  const PAGES = {
+    home: ['home','main','dashboard','start'],
+    bookings: ['book','booking','space','amenity','gym','pool','room','hall','reserve','clubhouse'],
+    visitors: ['visitor','gate','invite','guest','delivery','move','entry'],
+    marketplace: ['market','buy','sell','post','listing','shop'],
+    profile: ['profile','account','my details','vehicles','pets','family','documents'],
+    news: ['news','notice','announcement','updates','society news'],
+    locks: ['lock','unlock','door','smart lock'],
+  };
+
+  const processWithClaude = async (text) => {
+    setStatus('thinking');
+    setResponse('');
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 200,
+          system: `You are a voice navigation assistant for PA Lite, a residential community app. 
+The app has these pages: home, bookings (space/amenity booking), visitors (gate pass, visitor invites, move requests), marketplace (buy/sell posts), profile (account, vehicles, pets, family), news (society announcements), locks (smart lock control).
+The user will say something and you must respond with ONLY a JSON object like:
+{"action":"navigate","page":"bookings","message":"Taking you to Space Bookings!"}
+or if unclear:
+{"action":"unclear","message":"Sorry, I didn't catch that. Try saying something like 'book a space' or 'invite a visitor'."}
+Valid page values: home, bookings, visitors, marketplace, profile, news, locks
+Keep message friendly, under 10 words. Respond ONLY with the JSON, no other text.`,
+          messages: [{role:'user', content: text}]
+        })
+      });
+      const data = await res.json();
+      const raw = data.content?.[0]?.text || '{}';
+      const parsed = JSON.parse(raw.replace(/```json|```/g,'').trim());
+      setResponse(parsed.message || 'Done!');
+      setStatus('done');
+      if(parsed.action === 'navigate' && parsed.page) {
+        setTimeout(()=>{ onNavigate(parsed.page); onClose(); }, 1200);
+      } else {
+        setTimeout(onClose, 3000);
+      }
+    } catch(e) {
+      // Fallback: simple keyword match
+      const lower = text.toLowerCase();
+      let matched = null;
+      for(const [page, keywords] of Object.entries(PAGES)) {
+        if(keywords.some(k => lower.includes(k))) { matched = page; break; }
+      }
+      if(matched) {
+        setResponse(`Taking you to ${matched}!`);
+        setStatus('done');
+        setTimeout(()=>{ onNavigate(matched); onClose(); }, 1000);
+      } else {
+        setStatus('error');
+        setResponse("Sorry, I didn't understand. Try again.");
+        setTimeout(onClose, 2500);
+      }
+    }
+  };
+
+  useEffect(()=>{
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if(!SpeechRecognition) {
+      setStatus('error');
+      setResponse('Voice not supported on this browser. Try Chrome.');
+      setTimeout(onClose, 3000);
+      return;
+    }
+    const rec = new SpeechRecognition();
+    rec.lang = 'en-IN';
+    rec.continuous = false;
+    rec.interimResults = true;
+    rec.maxAlternatives = 1;
+    recognitionRef.current = rec;
+
+    rec.onresult = (e) => {
+      const interim = Array.from(e.results).map(r=>r[0].transcript).join('');
+      setTranscript(interim);
+      if(e.results[e.results.length-1].isFinal) {
+        rec.stop();
+        processWithClaude(interim);
+      }
+    };
+    rec.onerror = (e) => {
+      if(e.error === 'no-speech') { setStatus('error'); setResponse('No speech detected. Tap to try again.'); setTimeout(onClose,2000); }
+      else { setStatus('error'); setResponse('Microphone error. Please try again.'); setTimeout(onClose,2000); }
+    };
+    rec.onend = () => { if(status === 'listening') setStatus('thinking'); };
+    rec.start();
+
+    return ()=>{ try{ rec.stop(); }catch(e){} };
+  }, []);
+
+  const orbClass = `voice-orb ${status==='listening'?'listening':status==='thinking'?'thinking':''}`;
+
+  return <div className="voice-overlay" onClick={e=>e.stopPropagation()}>
+    <div className={orbClass}>
+      {status==='listening' && <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>}
+      {status==='thinking' && <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg>}
+      {(status==='done'||status==='error') && <svg viewBox="0 0 24 24" fill="none" stroke={status==='done'?'#0a0a0f':'#e17055'} strokeWidth="2.5">{status==='done'?<polyline points="20 6 9 17 4 12"/>:<><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></>}</svg>}
+    </div>
+    <div className="voice-status">
+      {status==='listening' && 'Listening...'}
+      {status==='thinking' && 'Got it, one sec...'}
+      {status==='done' && 'On it!'}
+      {status==='error' && 'Oops!'}
+    </div>
+    {transcript && <div className="voice-transcript">"{transcript}"</div>}
+    {response && <div className="voice-response">{response}</div>}
+    <button className="voice-cancel" onClick={onClose}>Cancel</button>
+  </div>;
+}
+
 function App() {
   const [token, setToken] = useState(localStorage.getItem('gk_token'));
   const [user, setUser] = useState(null);
   const [ctx, setCtx] = useState(null);
   const [page, setPage] = useState('home');
   const [loading, setLoading] = useState(true);
+  const [voiceOpen, setVoiceOpen] = useState(false);
 
   const loadMe = useCallback(()=>{
     if(!token) {setLoading(false); return;}
@@ -145,6 +278,7 @@ function App() {
   const pages = {home:<HomePage ctx={ctx} setPage={setPage}/>,profile:<ProfilePage ctx={ctx} user={user} onLogout={handleLogout} switchApt={switchApt} reload={loadMe} setPage={setPage}/>,bookings:<BookingsPage setPage={setPage}/>,visitors:<VisitorsPage ctx={ctx} setPage={setPage}/>,marketplace:<MarketplacePage setPage={setPage}/>,locks:<LocksPage setPage={setPage}/>,news:<NewsPage setPage={setPage}/>};
 
   return <div className="app">
+    {voiceOpen && <VoiceAssistant onNavigate={setPage} onClose={()=>setVoiceOpen(false)}/>}
     {pages[page] || pages.home}
     <div className="nav">
       <div className="nav-inner">
@@ -153,7 +287,7 @@ function App() {
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
             Lock
           </button>
-          <button className="nav-center" onClick={()=>alert('Voice coming soon!')}>
+          <button className={`nav-center ${voiceOpen?'active-voice':''}`} onClick={()=>setVoiceOpen(true)}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
           </button>
           <button className={`nav-btn ${page==='bookings'?'active':''}`} onClick={()=>setPage('bookings')}>
