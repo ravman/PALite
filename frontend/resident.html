@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GateKeeper - Resident App</title>
+<title>PA Lite</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
@@ -111,14 +111,14 @@ function App() {
   const handleLogout = ()=>{localStorage.removeItem('gk_token');setToken(null);setUser(null);setCtx(null);setPage('home');};
   const switchApt = (aptId)=>{api('/api/context/switch',{method:'POST',body:JSON.stringify({apartmentId:aptId})}).then(()=>loadMe());};
 
-  if(loading) return <div className="login"><h1>GateKeeper</h1><p>Loading...</p></div>;
+  if(loading) return <div className="login"><h1>PA Lite</h1><p>Loading...</p></div>;
   if(!token) return <LoginPage onLogin={handleLogin}/>;
 
   const pages = {home:<HomePage ctx={ctx}/>,profile:<ProfilePage ctx={ctx} user={user} onLogout={handleLogout} switchApt={switchApt} reload={loadMe}/>,bookings:<BookingsPage/>,visitors:<VisitorsPage ctx={ctx}/>,marketplace:<MarketplacePage/>};
 
   return <div className="app">
     <div className="header">
-      <h1>GateKeeper</h1>
+      <h1>PA Lite</h1>
       <div className="ctx" onClick={()=>setPage('profile')}>
         {ctx?.society && <><span>{ctx.society.name}</span><br/>{ctx.apartment?.unit_number || 'No apartment'}</>}
       </div>
@@ -149,7 +149,7 @@ function LoginPage({onLogin}) {
   };
 
   return <div className="login">
-    <h1>GateKeeper</h1>
+    <h1>PA Lite</h1>
     <p>Smart Community Living</p>
     <div className="form">
       {step==='phone' ? <>

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>GateKeeper Guard App</title>
+<title>GateKeeper</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
@@ -80,7 +80,7 @@ function App() {
   if(!token) return <LoginPage onLogin={handleLogin}/>;
 
   return <div className="app">
-    <div className="header"><div><h1>GateKeeper Guard</h1><div className="sub">{ctx?.society?.name||'No Society'}</div></div>
+    <div className="header"><div><h1>GateKeeper</h1><div className="sub">{ctx?.society?.name||'No Society'}</div></div>
       <button className="btn-sm btn-red" style={{border:'none',borderRadius:8,padding:'6px 12px',fontSize:11,cursor:'pointer',fontFamily:'inherit',fontWeight:600,background:'var(--red)',color:'white'}} onClick={()=>{localStorage.removeItem('gk_guard_token');setToken(null);}}>Logout</button></div>
     {page==='scan'&&<ScanPage/>}
     {page==='entry'&&<EntryPage ctx={ctx}/>}
@@ -98,8 +98,8 @@ function LoginPage({onLogin}) {
   const send=()=>api('/api/auth/request-otp',{method:'POST',body:JSON.stringify({phone})}).then(d=>{if(d.success){setSid(d.sessionId);setStep('otp');}});
   const verify=()=>api('/api/auth/verify-otp',{method:'POST',body:JSON.stringify({sessionId:sid,otp})}).then(d=>{if(d.token)onLogin(d.token);});
   return <div className="login">
-    <h1>Guard App</h1>
-    <p style={{color:'var(--text2)'}}>GateKeeper Security</p>
+    <h1>GateKeeper</h1>
+    <p style={{color:'var(--text2)'}}>Guard Portal</p>
     <div style={{width:'100%',maxWidth:320}}>
       {step==='phone'?<><div className="form-group"><label className="label">Phone</label><input className="input" value={phone} onChange={e=>setPhone(e.target.value)} placeholder="Guard phone"/></div>
         <button className="btn btn-primary" onClick={send}>Send OTP</button>

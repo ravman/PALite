@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>GateKeeper Admin Console</title>
+<title>Admin Console</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
@@ -95,7 +95,7 @@ function App() {
 
   return <div className="layout">
     <div className="sidebar">
-      <h1 style={{padding:'16px 20px 16px'}}>GateKeeper Admin</h1>
+      <h1 style={{padding:'16px 20px 16px'}}>Admin Console</h1>
       <div className="society-name"><span>{ctx?.society?.name||'No Society'}</span>{ctx?.society?.city}</div>
       <nav>
         {[['dashboard','Dashboard'],['residents','Residents'],['spaces','Spaces'],['bookings','Bookings'],['approvals','Approvals'],['daily_help','Daily Help'],['documents','Documents'],['doc_reqs','Doc Requirements']].map(([k,l])=>
@@ -114,7 +114,7 @@ function LoginPage({onLogin}) {
   const send=()=>api('/api/auth/request-otp',{method:'POST',body:JSON.stringify({phone})}).then(d=>{if(d.success){setSid(d.sessionId);setStep('otp');}});
   const verify=()=>api('/api/auth/verify-otp',{method:'POST',body:JSON.stringify({sessionId:sid,otp})}).then(d=>{if(d.token)onLogin(d.token);});
   return <div className="login">
-    <h1>GateKeeper Admin</h1>
+    <h1>Admin Console</h1>
     <p style={{color:'var(--text2)'}}>Management Console</p>
     <div style={{width:300}}>
       {step==='phone'?<><div className="form-group"><label className="label">Phone</label><input className="input" value={phone} onChange={e=>setPhone(e.target.value)} placeholder="Admin phone"/></div>
