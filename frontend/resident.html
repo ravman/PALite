@@ -19,9 +19,9 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .header h1{font-size:18px;font-weight:700;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
 .header .ctx{font-size:11px;color:var(--text2);text-align:right;cursor:pointer}
 .header .ctx span{color:var(--accent2);font-weight:600}
-.nav{width:100%;flex-shrink:0;pointer-events:none}
-.nav-inner{display:flex;align-items:flex-end;justify-content:space-between;padding:0 32px 16px;pointer-events:all}
-.nav-pill{background:var(--nav-bg,rgba(20,20,31,0.96));backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.08);border-radius:50px;display:flex;align-items:center;justify-content:space-between;padding:10px 28px;gap:32px}
+.nav{position:fixed;bottom:0;left:0;right:0;display:flex;justify-content:center;pointer-events:none;z-index:100;padding-bottom:env(safe-area-inset-bottom)}
+.nav-inner{width:100%;max-width:480px;display:flex;align-items:flex-end;justify-content:center;padding:0 32px 16px;pointer-events:all}
+.nav-pill{background:var(--nav-bg,rgba(20,20,31,0.96));backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.08);border-radius:50px;display:flex;align-items:center;justify-content:space-between;padding:10px 28px;gap:32px;width:100%;max-width:320px}
 .nav-btn{background:none;border:none;color:var(--text2);cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:9px;font-family:inherit;font-weight:500;transition:.2s;padding:4px 8px;border-radius:20px}
 .nav-btn.active{color:white}
 .nav-btn svg{width:22px;height:22px}
