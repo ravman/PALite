@@ -5,6 +5,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
@@ -39,6 +40,16 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .qr-input{background:var(--card);border:2px dashed var(--border);border-radius:16px;padding:40px 20px;text-align:center;cursor:pointer;transition:.2s}
 .qr-input:hover{border-color:var(--accent)}
 .qr-result{background:var(--card);border:2px solid var(--green);border-radius:16px;padding:20px}
+.scanner-wrap{position:relative;border-radius:16px;overflow:hidden;background:#000;aspect-ratio:1;width:100%}
+.scanner-video{width:100%;height:100%;object-fit:cover;display:block}
+.scanner-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none}
+.scanner-frame{width:62%;height:62%;border:3px solid rgba(88,166,255,0.85);border-radius:16px;box-shadow:0 0 0 2000px rgba(0,0,0,0.45);position:relative}
+.scanner-frame::before,.scanner-frame::after{content:'';position:absolute;width:22px;height:22px;border-color:var(--accent);border-style:solid}
+.scanner-frame::before{top:-3px;left:-3px;border-width:4px 0 0 4px;border-radius:4px 0 0 0}
+.scanner-frame::after{bottom:-3px;right:-3px;border-width:0 4px 4px 0;border-radius:0 0 4px 0}
+.scanner-line{position:absolute;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--accent),transparent);animation:scan 2s linear infinite}
+@keyframes scan{0%{top:0}100%{top:100%}}
+.scanner-found{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(63,185,80,0.25);border:3px solid var(--green);border-radius:16px}
 .login{display:flex;align-items:center;justify-content:center;min-height:100vh;flex-direction:column;gap:16px;padding:20px}
 .login h1{font-size:28px;color:var(--accent)}
 .empty{text-align:center;padding:40px;color:var(--text2)}
@@ -48,7 +59,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 select.input{appearance:none}
 </style></head><body><div id="root"></div>
 <script type="text/babel">
-const {useState,useEffect,useCallback} = React;
+const {useState,useEffect,useCallback,useRef} = React;
 
 function api(path, opts={}) {
   const token = localStorage.getItem('gk_guard_token');
@@ -148,45 +159,187 @@ function LoginPage({onLogin}) {
   </div>;
 }
 
+function QRScanner({onDetected, onClose}) {
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const streamRef = useRef(null);
+  const rafRef = useRef(null);
+  const [found, setFound] = useState(false);
+  const [camErr, setCamErr] = useState('');
+
+  useEffect(()=>{
+    let active = true;
+    navigator.mediaDevices.getUserMedia({video:{facingMode:'environment',width:{ideal:1280},height:{ideal:720}}})
+      .then(stream=>{
+        if(!active){stream.getTracks().forEach(t=>t.stop());return;}
+        streamRef.current = stream;
+        if(videoRef.current){ videoRef.current.srcObject=stream; videoRef.current.play(); }
+      })
+      .catch(e=>{ setCamErr('Camera access denied. Use manual entry below.'); });
+
+    return ()=>{
+      active=false;
+      if(rafRef.current) cancelAnimationFrame(rafRef.current);
+      if(streamRef.current) streamRef.current.getTracks().forEach(t=>t.stop());
+    };
+  },[]);
+
+  useEffect(()=>{
+    const tick=()=>{
+      const video=videoRef.current; const canvas=canvasRef.current;
+      if(!video||!canvas||video.readyState<2){rafRef.current=requestAnimationFrame(tick);return;}
+      canvas.width=video.videoWidth; canvas.height=video.videoHeight;
+      const ctx=canvas.getContext('2d');
+      ctx.drawImage(video,0,0,canvas.width,canvas.height);
+      const img=ctx.getImageData(0,0,canvas.width,canvas.height);
+      const code=window.jsQR&&window.jsQR(img.data,img.width,img.height,{inversionAttempts:'dontInvert'});
+      if(code&&code.data){
+        setFound(true);
+        if(rafRef.current) cancelAnimationFrame(rafRef.current);
+        if(streamRef.current) streamRef.current.getTracks().forEach(t=>t.stop());
+        setTimeout(()=>onDetected(code.data), 400);
+        return;
+      }
+      rafRef.current=requestAnimationFrame(tick);
+    };
+    rafRef.current=requestAnimationFrame(tick);
+    return ()=>{ if(rafRef.current) cancelAnimationFrame(rafRef.current); };
+  },[]);
+
+  if(camErr) return <div style={{padding:'20px 0',color:'var(--red)',fontSize:13,textAlign:'center'}}>{camErr}</div>;
+
+  return <div>
+    <div className="scanner-wrap">
+      <video ref={videoRef} className="scanner-video" playsInline muted/>
+      <canvas ref={canvasRef} style={{display:'none'}}/>
+      <div className="scanner-overlay">
+        {found
+          ? <div className="scanner-found"><span style={{fontSize:48}}>✅</span></div>
+          : <div className="scanner-frame"><div className="scanner-line"/></div>}
+      </div>
+    </div>
+    <button onClick={onClose} style={{width:'100%',marginTop:10,padding:'10px 0',borderRadius:10,background:'var(--card)',border:'1px solid var(--border)',color:'var(--text2)',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>
+      Cancel Camera
+    </button>
+  </div>;
+}
+
 function ScanPage() {
-  const [qr,setQr]=useState('');const [result,setResult]=useState(null);const [err,setErr]=useState('');
-  const scan=()=>{
-    setErr('');setResult(null);
-    api('/api/guard/scan-qr',{method:'POST',body:JSON.stringify({qrCode:qr})}).then(d=>{
+  const [mode, setMode] = useState('idle'); // idle | camera | manual
+  const [qr, setQr] = useState('');
+  const [result, setResult] = useState(null);
+  const [err, setErr] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const verify = (code) => {
+    const trimmed = (code||qr).trim();
+    if(!trimmed) return;
+    setErr(''); setResult(null); setLoading(true);
+    api('/api/guard/scan-qr',{method:'POST',body:JSON.stringify({qrCode:trimmed})}).then(d=>{
+      setLoading(false);
       if(d.error) setErr(d.error);
       else setResult(d);
     });
   };
+
+  const onCameraDetect = (code) => {
+    setMode('idle');
+    setQr(code);
+    verify(code);
+  };
+
   const createEntry=(inv)=>{
     api('/api/guard/create-entry',{method:'POST',body:JSON.stringify({
       visitorName:inv.visitor_name,visitorPhone:inv.visitor_phone,visitorType:inv.visitor_type,
       apartmentId:inv.apartment_id,invitationId:inv.id
-    })}).then(d=>{if(d.success){alert('Entry created & approval sent!');setResult(null);setQr('');}});
+    })}).then(d=>{if(d.success){setResult(null);setQr('');setMode('idle');alert('Entry created & approval sent!');}});
   };
 
   return <div className="page">
-    <h2 style={{fontSize:20,marginBottom:16}}>Scan QR Code</h2>
-    <div className="form-group">
-      <label className="label">Enter QR Code</label>
-      <input className="input" value={qr} onChange={e=>setQr(e.target.value)} placeholder="QR-XXXXXXXX or QR-DH-XXXXXX" style={{fontFamily:'Space Mono',fontSize:16,textAlign:'center',padding:16}}/>
-    </div>
-    <button className="btn btn-primary" onClick={scan}>Verify QR Code</button>
-    {err&&<div className="card" style={{marginTop:16,borderColor:'var(--red)'}}><span style={{color:'var(--red)'}}>Invalid QR code - not found or expired</span></div>}
-    {result&&result.type==='visitor'&&<div className="qr-result" style={{marginTop:16}}>
-      <h3 style={{color:'var(--green)',marginBottom:8}}>Valid Visitor Invitation</h3>
-      <div style={{fontSize:15,fontWeight:600}}>{result.invitation.visitor_name}</div>
-      <div style={{color:'var(--text2)',fontSize:13}}>{result.invitation.visitor_type} &bull; {result.invitation.visitor_phone}</div>
-      <div style={{color:'var(--text2)',fontSize:13,marginTop:4}}>Apartment: {result.invitation.unit_number} - {result.invitation.tower_name}</div>
-      <div style={{color:'var(--text2)',fontSize:13}}>Purpose: {result.invitation.purpose}</div>
-      <button className="btn btn-green" style={{marginTop:12}} onClick={()=>createEntry(result.invitation)}>Allow Entry & Notify Resident</button>
+    <h2 style={{fontSize:20,marginBottom:4}}>Scan QR Code</h2>
+    <p style={{fontSize:13,color:'var(--text2)',marginBottom:16}}>Scan a resident's gate pass QR or enter the code manually.</p>
+
+    {/* Mode selector buttons — shown when idle or manual */}
+    {mode !== 'camera' && <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:16}}>
+      <button onClick={()=>{setMode('camera');setResult(null);setErr('');}}
+        style={{padding:'14px 0',borderRadius:12,border:`2px solid ${mode==='camera'?'var(--accent)':'var(--border)'}`,
+          background:'var(--card)',cursor:'pointer',fontFamily:'inherit',fontWeight:700,fontSize:14,color:'var(--text)',
+          display:'flex',flexDirection:'column',alignItems:'center',gap:6}}>
+        <span style={{fontSize:26}}>📷</span>
+        <span>Camera Scan</span>
+      </button>
+      <button onClick={()=>{setMode('manual');setResult(null);setErr('');}}
+        style={{padding:'14px 0',borderRadius:12,border:`2px solid ${mode==='manual'?'var(--accent)':'var(--border)'}`,
+          background:'var(--card)',cursor:'pointer',fontFamily:'inherit',fontWeight:700,fontSize:14,color:'var(--text)',
+          display:'flex',flexDirection:'column',alignItems:'center',gap:6}}>
+        <span style={{fontSize:26}}>⌨️</span>
+        <span>Manual Entry</span>
+      </button>
     </div>}
+
+    {/* Camera scanner */}
+    {mode==='camera' && <div style={{marginBottom:16}}>
+      <QRScanner onDetected={onCameraDetect} onClose={()=>setMode('idle')}/>
+    </div>}
+
+    {/* Manual entry */}
+    {mode==='manual' && <div style={{marginBottom:16}}>
+      <div className="form-group">
+        <label className="label">QR Code</label>
+        <input className="input" value={qr} onChange={e=>setQr(e.target.value)}
+          placeholder="QR-XXXXXXXX or QR-DH-XXXXXX" autoFocus
+          onKeyDown={e=>e.key==='Enter'&&verify()}
+          style={{fontFamily:'Space Mono',fontSize:16,textAlign:'center',padding:16,letterSpacing:2}}/>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+        <button className="btn btn-primary" onClick={()=>verify()} disabled={loading}>
+          {loading ? 'Checking…' : 'Verify Code'}
+        </button>
+        <button onClick={()=>{setMode('idle');setQr('');setErr('');setResult(null);}}
+          style={{padding:'12px 0',borderRadius:10,background:'var(--card)',border:'1px solid var(--border)',
+            color:'var(--text2)',fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>
+          Cancel
+        </button>
+      </div>
+    </div>}
+
+    {/* Error */}
+    {err && <div className="card" style={{marginTop:16,borderColor:'var(--red)',display:'flex',alignItems:'center',gap:10}}>
+      <span style={{fontSize:24}}>❌</span>
+      <div>
+        <div style={{fontWeight:700,color:'var(--red)',fontSize:14}}>Invalid QR Code</div>
+        <div style={{fontSize:12,color:'var(--text2)',marginTop:2}}>Not found, already used, or expired</div>
+      </div>
+    </div>}
+
+    {/* Visitor result */}
+    {result&&result.type==='visitor'&&<div className="qr-result" style={{marginTop:16}}>
+      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}>
+        <span style={{fontSize:28}}>✅</span>
+        <h3 style={{color:'var(--green)',fontSize:16}}>Valid Gate Pass</h3>
+      </div>
+      <div style={{fontSize:16,fontWeight:700,marginBottom:4}}>{result.invitation.visitor_name}</div>
+      <div style={{color:'var(--text2)',fontSize:13}}>{result.invitation.visitor_type} &bull; {result.invitation.visitor_phone}</div>
+      <div style={{color:'var(--text2)',fontSize:13,marginTop:4}}>📍 {result.invitation.unit_number} – {result.invitation.tower_name}</div>
+      {result.invitation.purpose&&<div style={{color:'var(--text2)',fontSize:13}}>Purpose: {result.invitation.purpose}</div>}
+      <button className="btn btn-green" style={{marginTop:14,width:'100%'}} onClick={()=>createEntry(result.invitation)}>
+        ✓ Allow Entry &amp; Notify Resident
+      </button>
+    </div>}
+
+    {/* Daily help result */}
     {result&&result.type==='daily_help'&&<div className="qr-result" style={{marginTop:16}}>
-      <h3 style={{color:'var(--green)',marginBottom:8}}>Approved Daily Help</h3>
-      <div style={{fontSize:15,fontWeight:600}}>{result.dailyHelp.name}</div>
+      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}>
+        <span style={{fontSize:28}}>✅</span>
+        <h3 style={{color:'var(--green)',fontSize:16}}>Approved Daily Help</h3>
+      </div>
+      <div style={{fontSize:16,fontWeight:700,marginBottom:4}}>{result.dailyHelp.name}</div>
       <div style={{color:'var(--text2)',fontSize:13}}>{result.dailyHelp.help_type} &bull; ID: {result.dailyHelp.id_code}</div>
-      <div style={{marginTop:8}}><b style={{fontSize:12}}>Assigned Apartments:</b>
-        {result.assignments?.map(a=><div key={a.id} style={{color:'var(--text2)',fontSize:12,marginTop:4}}>{a.unit_number} - {a.tower_name} ({a.days_of_week}) {a.time_slot}</div>)}</div>
-      <button className="btn btn-green" style={{marginTop:12}} onClick={()=>alert('Entry logged')}>Log Entry</button>
+      <div style={{marginTop:10}}>
+        <div style={{fontSize:12,fontWeight:700,color:'var(--text2)',marginBottom:6}}>ASSIGNED TO</div>
+        {result.assignments?.map(a=><div key={a.id} style={{color:'var(--text)',fontSize:13,padding:'6px 0',borderBottom:'1px solid var(--border)'}}>{a.unit_number} – {a.tower_name} <span style={{color:'var(--text2)'}}>({a.days_of_week}) {a.time_slot}</span></div>)}
+      </div>
+      <button className="btn btn-green" style={{marginTop:14,width:'100%'}} onClick={()=>alert('Entry logged')}>✓ Log Entry</button>
     </div>}
   </div>;
 }
