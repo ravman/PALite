@@ -1568,40 +1568,88 @@ function NewsPhotoCarousel({images}) {
 }
 
 function NewsPage({setPage}) {
-  const [news, setNews] = useState([]);
+  const [news, setNews]       = useState([]);
   const [loading, setLoading] = useState(true);
+  const [category, setCategory] = useState('all');
 
   useEffect(()=>{
     api('/api/news').then(d=>{ setNews(Array.isArray(d)?d:[]); setLoading(false); });
   },[]);
 
-  const formatDate = dt => {
+  const timeAgo = dt => {
     if(!dt) return '';
-    const d = new Date(dt);
-    return d.toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'});
+    const diff = (Date.now() - new Date(dt).getTime()) / 1000;
+    if(diff < 60)   return 'just now';
+    if(diff < 3600) return `${Math.floor(diff/60)}m ago`;
+    if(diff < 86400) return `${Math.floor(diff/3600)}h ago`;
+    return `${Math.floor(diff/86400)}d ago`;
   };
 
-  return <div>
-    <PageHeader title="Society News" onBack={()=>setPage('home')}/>
-    <div className="page">
-    {loading && <div className="empty">Loading...</div>}
-    {!loading && !news.length && <div className="empty" style={{paddingTop:60}}>
-      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--text2)" strokeWidth="1.5" style={{marginBottom:12}}><path d="M4 22h16a2 2 0 002-2V4a2 2 0 00-2-2H8a2 2 0 00-2 2v16a2 2 0 01-2 2zm0 0a2 2 0 01-2-2v-9c0-1.1.9-2 2-2h2"/><path d="M18 14h-8M15 18h-5M10 6h8v4h-8z"/></svg>
-      <p>No announcements yet</p>
-    </div>}
-    {news.map(n=><div key={n.id} className="card" style={{marginBottom:16}}>
-      {n.is_pinned?<div style={{display:'flex',alignItems:'center',gap:6,fontSize:11,color:'var(--accent2)',fontWeight:600,marginBottom:8}}>
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5v6h2v-6h5v-2l-2-2z"/></svg>
-        PINNED
-      </div>:null}
-      <NewsPhotoCarousel images={n.images}/>
-      <div style={{fontWeight:700,fontSize:16,color:'var(--text)',marginBottom:6}}>{n.title}</div>
-      {n.body&&<div style={{fontSize:13,color:'var(--text2)',lineHeight:1.6,marginBottom:10,whiteSpace:'pre-wrap'}}>{n.body}</div>}
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-        <span style={{fontSize:11,color:'var(--text2)'}}>{n.author_name}</span>
-        <span style={{fontSize:11,color:'var(--text2)'}}>{formatDate(n.created_at)}</span>
-      </div>
-    </div>)}
+  const CATEGORIES = [
+    {key:'all',      label:'All',         color:'#6C8EF0', bg:'rgba(108,142,240,.15)'},
+    {key:'society',  label:'Society',     color:'#4CAF7D', bg:'rgba(76,175,125,.12)'},
+    {key:'events',   label:'Events',      color:'#E05555', bg:'rgba(224,85,85,.12)'},
+    {key:'maintenance', label:'Maintenance', color:'#E8A020', bg:'rgba(232,160,32,.12)'},
+  ];
+
+  const filtered = category==='all' ? news : news.filter(n=>(n.category||'society')===category);
+
+  const catStyle = key => {
+    const c = CATEGORIES.find(x=>x.key===key) || CATEGORIES[1];
+    return {color:c.color, background:c.bg, border:`1px solid ${c.color}33`};
+  };
+
+  return <div style={{background:'var(--bg)',minHeight:'100vh'}}>
+    {/* Header */}
+    <div style={{display:'flex',alignItems:'center',gap:12,padding:'16px 20px 12px',position:'sticky',top:0,background:'var(--bg)',zIndex:10}}>
+      <button onClick={()=>setPage('home')} style={{width:36,height:36,borderRadius:'50%',background:'var(--card2)',border:'none',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',color:'var(--text)',fontSize:18,fontWeight:700}}>‹</button>
+      <span style={{fontSize:20,fontWeight:700}}>News</span>
+    </div>
+
+    {/* Category pills */}
+    <div style={{display:'flex',gap:8,padding:'0 16px 16px',overflowX:'auto'}}>
+      {CATEGORIES.map(c=>{
+        const active = category===c.key;
+        return <button key={c.key} onClick={()=>setCategory(c.key)} style={{
+          flexShrink:0, padding:'7px 18px', borderRadius:20, border: active?`1px solid ${c.color}`:'1px solid var(--border)',
+          background: active?c.bg:'none', color: active?c.color:'var(--text2)',
+          fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit', transition:'all .2s',
+          position:'relative',
+        }}>
+          {c.label}
+          {active && c.key!=='all' && <span style={{position:'absolute',bottom:-2,left:'50%',transform:'translateX(-50%)',width:5,height:5,borderRadius:'50%',background:c.color}}/>}
+        </button>;
+      })}
+    </div>
+
+    {/* List */}
+    <div style={{padding:'0 16px 100px'}}>
+      {loading && <div style={{textAlign:'center',padding:'60px 0',color:'var(--text2)'}}>Loading…</div>}
+      {!loading && !filtered.length && <div style={{textAlign:'center',padding:'60px 0',color:'var(--text2)'}}>
+        <div style={{fontSize:36,marginBottom:12}}>📰</div>
+        <div>No {category==='all'?'':category} announcements yet</div>
+      </div>}
+      {filtered.map(n=>{
+        const thumb = n.images && n.images.length > 0 ? n.images[0] : null;
+        const cat   = n.category || 'society';
+        return <div key={n.id} style={{background:'var(--card2)',borderRadius:16,marginBottom:10,padding:'14px',display:'flex',gap:12,alignItems:'center',border:'1px solid var(--border)'}}>
+          {/* Thumbnail */}
+          <div style={{width:60,height:60,borderRadius:12,overflow:'hidden',flexShrink:0,background:'var(--card)',display:'flex',alignItems:'center',justifyContent:'center'}}>
+            {thumb
+              ? <img src={thumb} style={{width:'100%',height:'100%',objectFit:'cover'}}/>
+              : <span style={{fontSize:24}}>{cat==='events'?'🎉':cat==='maintenance'?'🔧':'📢'}</span>}
+          </div>
+          {/* Text */}
+          <div style={{flex:1,minWidth:0}}>
+            {n.is_pinned && <div style={{fontSize:10,color:'var(--accent)',fontWeight:700,marginBottom:2}}>📌 PINNED</div>}
+            <div style={{fontWeight:700,fontSize:14,color:'var(--text)',marginBottom:4,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{n.title}</div>
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <span style={{fontSize:11,fontWeight:600,padding:'2px 9px',borderRadius:20,...catStyle(cat)}}>{cat.charAt(0).toUpperCase()+cat.slice(1)}</span>
+              <span style={{fontSize:11,color:'var(--text2)',display:'flex',alignItems:'center',gap:3}}>⏱ {timeAgo(n.created_at)}</span>
+            </div>
+          </div>
+        </div>;
+      })}
     </div>
   </div>;
 }
@@ -1820,30 +1868,24 @@ function SpaceGrid({spaces, spaceFilter, setSpaceFilter, onSelect}) {
 }
 
 function BookingsPage({setPage, prefill}) {
-  const [spaces, setSpaces] = useState([]);
+  const [spaces, setSpaces]     = useState([]);
   const [bookings, setBookings] = useState([]);
-  const [tab, setTab] = useState('spaces');
-  const [booking, setBooking] = useState(null);
+  const [tab, setTab]           = useState('activities');
+  const [booking, setBooking]   = useState(null);
   const [spaceFilter, setSpaceFilter] = useState('');
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
 
-  // Apply voice prefill when it arrives
+  // Apply voice prefill
   useEffect(()=>{
     if(!prefill) return;
     if(prefill.spaceSearch) setSpaceFilter(prefill.spaceSearch.toLowerCase());
     if(prefill.date||prefill.startTime||prefill.endTime||prefill.spaceSearch) {
       setTab('book');
-      setBooking(b=>({...(b||{}),
-        date: prefill.date||b?.date||'',
-        startTime: prefill.startTime||b?.startTime||'',
-        endTime: prefill.endTime||b?.endTime||'',
-      }));
+      setBooking(b=>({...(b||{}), date:prefill.date||b?.date||'', startTime:prefill.startTime||b?.startTime||'', endTime:prefill.endTime||b?.endTime||''}));
     }
   },[prefill]);
 
-  useEffect(()=>{
-    api('/api/spaces').then(setSpaces);
-    api('/api/bookings/my').then(setBookings);
-  },[]);
+  useEffect(()=>{ api('/api/spaces').then(setSpaces); api('/api/bookings/my').then(setBookings); },[]);
 
   const book = ()=>{
     if(!booking?.spaceId||!booking?.date||!booking?.startTime||!booking?.endTime) return alert('Fill all fields');
@@ -1853,31 +1895,116 @@ function BookingsPage({setPage, prefill}) {
         api(`/api/bookings/${d.bookingId}/pay`,{method:'POST'}).then(p=>{
           alert(`Paid! TXN: ${p.transactionId}`);
           api('/api/bookings/my').then(setBookings);
-          setBooking(null);setTab('my');
+          setBooking(null); setTab('activities');
         });
       }
     });
   };
 
-  return <div>
-    <PageHeader title="Space Booking" onBack={()=>setPage('home')}/>
-    <div className="tab-bar"><button className={`tab ${tab==='spaces'?'active':''}`} onClick={()=>setTab('spaces')}>Browse</button><button className={`tab ${tab==='my'?'active':''}`} onClick={()=>setTab('my')}>My Bookings</button>{tab==='book'&&<button className={`tab active`}>Book Now</button>}</div>
+  // Date strip
+  const dateStrip = (() => {
+    const days = [];
+    for(let i=0; i<7; i++) {
+      const d = new Date(); d.setDate(d.getDate()+i);
+      days.push({ label: i===0?'Today':String(d.getDate()), value: d.toISOString().split('T')[0] });
+    }
+    return days;
+  })();
 
-    {tab==='spaces' && <SpaceGrid spaces={spaces} spaceFilter={spaceFilter} setSpaceFilter={setSpaceFilter} onSelect={s=>{setBooking({spaceId:s.id,date:prefill?.date||'',startTime:prefill?.startTime||'',endTime:prefill?.endTime||'',spotNumber:1});setTab('book');}}/>}
+  // Days that have bookings
+  const bookedDays = new Set(bookings.map(b=>b.booking_date));
 
-    {tab==='my' && <>
-      {bookings.map(b=><div key={b.id} className="card">
-        <div className="flex-between"><div><div className="card-title">{b.space_name}</div><div className="card-sub">{b.booking_date} {b.start_time}-{b.end_time}</div></div>
-        <div style={{textAlign:'right'}}><div style={{fontWeight:700,fontFamily:'Space Mono'}}>Rs.{b.total_cost}</div><span className={`badge badge-${b.status==='confirmed'?'green':b.status==='pending'?'orange':'red'}`}>{b.status}</span>
-        {b.invoice_status==='unpaid'&&<button className="btn btn-sm btn-primary mt-2" onClick={()=>{api(`/api/bookings/${b.id}/pay`,{method:'POST'}).then(()=>api('/api/bookings/my').then(setBookings));}}>Pay</button>}</div></div>
-      </div>)}
-      {!bookings.length && <div className="empty">No bookings yet</div>}
+  // Filtered bookings for selected date
+  const dayBookings = bookings.filter(b=>b.booking_date===selectedDate);
+
+  const fmtTime = t => {
+    if(!t) return '';
+    const [h,m] = t.split(':');
+    const hh = parseInt(h); const ampm = hh>=12?'PM':'AM';
+    return `${hh===0?12:hh>12?hh-12:hh}:${m} ${ampm}`;
+  };
+
+  const spaceIcon = type => ({gym:'🏋️',pool:'🏊',clubhouse:'🎉',tennis:'🎾',badminton:'🏸',yoga:'🧘',dance:'💃',party_hall:'🎊',library:'📚',other:'📅'})[type]||'📅';
+  const statusStyle = s => {
+    if(s==='confirmed') return {color:'#3CB371',border:'1px solid #3CB371',background:'rgba(60,179,113,.1)'};
+    if(s==='pending')   return {color:'#E8A020',border:'1px solid #E8A020',background:'rgba(232,160,32,.1)'};
+    return {color:'#E05555',border:'1px solid #E05555',background:'rgba(224,85,85,.1)'};
+  };
+  const avatarColors = ['#6C8EF0','#7EC8A4','#E8A87C','#C9A0DC','#5BA3C9'];
+  const spaceColor = name => { let h=0; for(const c of (name||'')) h=(h*31+c.charCodeAt(0))&0xffff; return avatarColors[h%avatarColors.length]; };
+
+  return <div style={{background:'var(--bg)',minHeight:'100vh'}}>
+    {/* Header */}
+    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'16px 20px 8px',position:'sticky',top:0,background:'var(--bg)',zIndex:10}}>
+      <div style={{display:'flex',alignItems:'center',gap:12}}>
+        <button onClick={()=>setPage('home')} style={{width:36,height:36,borderRadius:'50%',background:'var(--card2)',border:'none',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',color:'var(--text)',fontSize:18,fontWeight:700}}>‹</button>
+        <span style={{fontSize:20,fontWeight:700}}>My Activities</span>
+      </div>
+      <button onClick={()=>setTab('book')} style={{width:36,height:36,borderRadius:'50%',background:'var(--accent)',border:'none',cursor:'pointer',color:'white',fontSize:20,fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center'}}>+</button>
+    </div>
+
+    {/* Tab bar */}
+    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr'+(tab==='book'?' 1fr':''),margin:'0 16px 12px',background:'var(--card2)',borderRadius:14,padding:3}}>
+      {[['activities','Activities'],['browse','Browse'],...(tab==='book'?[['book','Book Now']]:[])]
+        .map(([k,l])=><button key={k} onClick={()=>setTab(k)} style={{
+          padding:'9px 0',borderRadius:11,border:'none',cursor:'pointer',fontSize:13,fontWeight:600,fontFamily:'inherit',
+          background:tab===k?'var(--accent)':'none',color:tab===k?'white':'var(--text2)',transition:'all .2s',
+        }}>{l}</button>)}
+    </div>
+
+    {/* Activities tab — date strip + cards */}
+    {tab==='activities' && <>
+      <div style={{display:'flex',alignItems:'center',gap:8,padding:'0 16px 14px',overflowX:'auto'}}>
+        <span style={{fontSize:16,color:'var(--text2)',flexShrink:0}}>↺</span>
+        {dateStrip.map(d=>{
+          const hasBooking = bookedDays.has(d.value);
+          return <button key={d.value} onClick={()=>setSelectedDate(d.value)} style={{
+            flexShrink:0,padding:'7px 14px',borderRadius:20,border:'none',cursor:'pointer',fontFamily:'inherit',fontSize:13,fontWeight:600,
+            background:selectedDate===d.value?'var(--accent)':'var(--card2)',color:selectedDate===d.value?'white':'var(--text)',transition:'all .2s',position:'relative',
+          }}>
+            {d.label}
+            {hasBooking && <span style={{position:'absolute',bottom:2,left:'50%',transform:'translateX(-50%)',width:4,height:4,borderRadius:'50%',background:selectedDate===d.value?'white':'var(--accent)'}}/>}
+          </button>;
+        })}
+        <button style={{flexShrink:0,width:30,height:30,borderRadius:'50%',background:'var(--card2)',border:'none',cursor:'pointer',color:'var(--text2)',fontSize:14}}>▾</button>
+      </div>
+
+      <div style={{padding:'0 16px 100px'}}>
+        {dayBookings.length===0 && <div style={{textAlign:'center',padding:'60px 0',color:'var(--text2)'}}>
+          <div style={{fontSize:40,marginBottom:12}}>📅</div>
+          <div style={{fontSize:14}}>No activities on this day</div>
+          <button onClick={()=>setTab('browse')} style={{marginTop:12,padding:'8px 20px',borderRadius:20,background:'var(--accent)',color:'white',border:'none',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>Browse Spaces</button>
+        </div>}
+        {dayBookings.map(b=>{
+          const icon = spaceIcon(b.space_type);
+          const color = spaceColor(b.space_name);
+          return <div key={b.id} style={{background:'var(--card2)',borderRadius:16,marginBottom:10,display:'flex',alignItems:'center',gap:12,padding:'14px 16px',border:'1px solid var(--border)'}}>
+            {/* Icon avatar */}
+            <div style={{width:50,height:50,borderRadius:14,background:color,display:'flex',alignItems:'center',justifyContent:'center',fontSize:24,flexShrink:0}}>{icon}</div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontWeight:700,fontSize:15,color:'var(--text)',marginBottom:2,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{b.space_name}</div>
+              <div style={{fontSize:12,color:'var(--text2)',marginBottom:4,textTransform:'capitalize'}}>{(b.space_type||'').replace('_',' ')}</div>
+            </div>
+            <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:5,flexShrink:0}}>
+              <span style={{fontSize:11,fontWeight:700,padding:'3px 10px',borderRadius:20,...statusStyle(b.status)}}>{b.status==='confirmed'?'Approved':b.status==='pending'?'Waiting':'Declined'}</span>
+              <div style={{fontSize:11,color:'var(--text2)',display:'flex',alignItems:'center',gap:3}}>⏱ {fmtTime(b.start_time)}</div>
+            </div>
+          </div>;
+        })}
+      </div>
     </>}
 
-    {tab==='book' && <div>
+    {tab==='browse' && <div style={{padding:'0 16px 100px'}}>
+      <SpaceGrid spaces={spaces} spaceFilter={spaceFilter} setSpaceFilter={setSpaceFilter}
+        onSelect={s=>{ setBooking({spaceId:s.id,date:prefill?.date||'',startTime:prefill?.startTime||'',endTime:prefill?.endTime||'',spotNumber:1}); setTab('book'); }}/>
+    </div>}
+
+    {tab==='book' && <div style={{padding:'0 16px 100px'}}>
       <div className="form-group"><label className="label">Space</label>
-      <select className="input" value={booking?.spaceId||''} onChange={e=>setBooking(b=>({...b,spaceId:e.target.value}))}>
-        <option value="">Select space</option>{spaces.map(s=><option key={s.id} value={s.id}>{s.name} - Rs.{s.cost_per_hour}/hr</option>)}</select></div>
+        <select className="input" value={booking?.spaceId||''} onChange={e=>setBooking(b=>({...b,spaceId:e.target.value}))}>
+          <option value="">Select space</option>{spaces.map(s=><option key={s.id} value={s.id}>{s.name} - Rs.{s.cost_per_hour}/hr</option>)}
+        </select>
+      </div>
       <div className="form-group"><label className="label">Date</label><input type="date" className="input" value={booking?.date||''} onChange={e=>setBooking(b=>({...b,date:e.target.value}))}/></div>
       <div className="grid-2">
         <div className="form-group"><label className="label">Start</label><input type="time" className="input" value={booking?.startTime||''} onChange={e=>setBooking(b=>({...b,startTime:e.target.value}))}/></div>
@@ -1889,95 +2016,157 @@ function BookingsPage({setPage, prefill}) {
 }
 
 function VisitorsPage({ctx,setPage,prefill}) {
+  const [tab, setTab]         = useState('expected');
+  const [entries, setEntries] = useState([]);
   const [invites, setInvites] = useState([]);
-  const [tab, setTab] = useState('my');
-  const [modal, setModal] = useState(false);
-  const [moves, setMoves] = useState([]);
+  const [modal, setModal]     = useState(false);
   const [invitePrefill, setInvitePrefill] = useState({});
-  const [qrInvite, setQrInvite] = useState(null); // invite object to show QR for
+  const [qrInvite, setQrInvite]           = useState(null);
+  const [selectedDate, setSelectedDate]   = useState(new Date().toISOString().split('T')[0]);
+  const [expanded, setExpanded]           = useState(null);
+  const [submitting, setSubmitting]       = useState(null);
+
+  // Build date strip: today + next 6 days
+  const dateStrip = (() => {
+    const days = [];
+    for(let i=0; i<7; i++) {
+      const d = new Date(); d.setDate(d.getDate()+i);
+      days.push({ label: i===0 ? 'Today' : String(d.getDate()), value: d.toISOString().split('T')[0] });
+    }
+    return days;
+  })();
 
   useEffect(()=>{
     if(!prefill) return;
     const fields = {};
-    if(prefill.visitorName) fields.visitorName = prefill.visitorName;
+    if(prefill.visitorName)  fields.visitorName  = prefill.visitorName;
     if(prefill.visitorPhone) fields.visitorPhone = prefill.visitorPhone;
-    if(prefill.visitorType) fields.visitorType = prefill.visitorType;
-    if(prefill.purpose) fields.purpose = prefill.purpose;
-    if(Object.keys(fields).length > 0) {
-      setInvitePrefill(fields);
-      setModal('invite');
-    }
+    if(prefill.visitorType)  fields.visitorType  = prefill.visitorType;
+    if(prefill.purpose)      fields.purpose      = prefill.purpose;
+    if(Object.keys(fields).length > 0) { setInvitePrefill(fields); setModal('invite'); }
   },[prefill]);
 
-  useEffect(()=>{
-    api('/api/visitors/my-invitations').then(setInvites);
-    api('/api/move-requests/my').then(setMoves);
-  },[]);
+  const loadEntries = () => {
+    if(tab==='expected') {
+      api('/api/visitors/my-invitations').then(d=>setInvites(Array.isArray(d)?d:[]));
+      api(`/api/visitors/my-entries?tab=expected&date=${selectedDate}`).then(d=>setEntries(Array.isArray(d)?d:[]));
+    } else {
+      api(`/api/visitors/my-entries?tab=${tab}`).then(d=>setEntries(Array.isArray(d)?d:[]));
+    }
+  };
+  useEffect(()=>{ loadEntries(); }, [tab, selectedDate]);
 
   const createInvite = d=>{api('/api/visitors/create-invite',{method:'POST',body:JSON.stringify(d)}).then(r=>{
-    api('/api/visitors/my-invitations').then(freshInvites=>{
-      setInvites(freshInvites);
-      // Auto-open QR for the newly created invite
-      if(r.id) { const created = freshInvites.find(i=>i.id===r.id); if(created) setQrInvite(created); }
+    api('/api/visitors/my-invitations').then(fresh=>{
+      setInvites(fresh);
+      if(r.id){ const created=fresh.find(i=>i.id===r.id); if(created) setQrInvite(created); }
     });
     setModal(false);
   });};
 
-  const createMove = (details, docs) => {
-    const docList = Object.entries(docs).map(([type, v]) => ({ type, fileName: v.fileName, data: v.data }));
-    api('/api/move-requests', { method: 'POST', body: JSON.stringify({ ...details, documents: docList }) })
-      .then(() => { api('/api/move-requests/my').then(setMoves); setModal(false); });
+  const actOn = (id, action) => {
+    setSubmitting(id);
+    api(`/api/visitors/${id}/${action}`,{method:'POST'}).then(()=>{ setSubmitting(null); setExpanded(null); loadEntries(); });
   };
 
-  return <div>
-    <PageHeader title="Visitors & Moves" onBack={()=>setPage('home')}/>
-    <div className="tab-bar">
-      <button className={`tab ${tab==='my'?'active':''}`} onClick={()=>setTab('my')}>Invitations</button>
-      <button className={`tab ${tab==='moves'?'active':''}`} onClick={()=>setTab('moves')}>Move Requests</button>
+  const fmtTime = ts => { if(!ts) return ''; const d=new Date(ts); return d.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:true}); };
+  const typeColor = t => ({guest:'#8B9FD4',cab:'#5BA3C9',delivery:'#E8A87C',daily_help:'#7EC8A4',other:'#9B8EC4'})[t]||'#8B9FD4';
+  const typeLabel = t => t ? t.replace('_',' ').replace(/\b\w/g,c=>c.toUpperCase()) : 'Guest';
+  const statusStyle = s => {
+    if(s==='Approved'||s==='Inside'||s==='Active') return {color:'#3CB371',border:'1px solid #3CB371',background:'rgba(60,179,113,.1)'};
+    if(s==='Waiting') return {color:'#E8A020',border:'1px solid #E8A020',background:'rgba(232,160,32,.1)'};
+    if(s==='Denied'||s==='Expired') return {color:'#E05555',border:'1px solid #E05555',background:'rgba(224,85,85,.1)'};
+    return {color:'var(--text2)',border:'1px solid var(--border)',background:'var(--card2)'};
+  };
+  const avatarColor = name => {
+    const colors=['#5BA3C9','#8B9FD4','#7EC8A4','#E8A87C','#C9A0DC'];
+    let h=0; for(const c of (name||'')) h=(h*31+c.charCodeAt(0))&0xffff;
+    return colors[h%colors.length];
+  };
+
+  // Unified card list
+  const cards = tab==='expected' ? [
+    ...invites.filter(inv=>{
+      const d=selectedDate, from=inv.valid_from?inv.valid_from.split('T')[0]:null, to=inv.valid_to?inv.valid_to.split('T')[0]:null;
+      if(from&&to) return d>=from&&d<=to; if(from) return d>=from;
+      return inv.created_at?.split('T')[0]===d||!from;
+    }).map(inv=>({_type:'invite',id:inv.id,name:inv.visitor_name,visitorType:inv.visitor_type,
+      status:inv.status==='active'?'Active':inv.status==='used'?'Inside':'Expired',statusKey:inv.status,
+      time:inv.valid_from,unit:ctx?.apartment?.unit_number,residentName:ctx?.user?.name,qr:inv})),
+    ...entries.map(e=>({_type:'entry',id:e.id,name:e.visitor_name,visitorType:e.visitor_type,
+      status:e.approval_status==='approved'?'Approved':e.approval_status==='pending'?'Waiting':e.approval_status==='rejected'?'Denied':e.approval_status,
+      statusKey:e.approval_status,time:e.entry_time||e.created_at,unit:ctx?.apartment?.unit_number,residentName:ctx?.user?.name})),
+  ] : entries.map(e=>({_type:'entry',id:e.id,name:e.visitor_name,visitorType:e.visitor_type,
+    status:e.exit_time?'Exited':e.approval_status==='approved'?'Inside':e.approval_status==='rejected'?'Denied':e.approval_status,
+    statusKey:e.approval_status,time:e.entry_time||e.created_at,unit:ctx?.apartment?.unit_number,residentName:ctx?.user?.name}));
+
+  return <div style={{background:'var(--bg)',minHeight:'100vh'}}>
+    {/* Header */}
+    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'16px 20px 8px',position:'sticky',top:0,background:'var(--bg)',zIndex:10}}>
+      <div style={{display:'flex',alignItems:'center',gap:12}}>
+        <button onClick={()=>setPage('home')} style={{width:36,height:36,borderRadius:'50%',background:'var(--card2)',border:'none',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',color:'var(--text)',fontSize:18,fontWeight:700}}>‹</button>
+        <span style={{fontSize:20,fontWeight:700}}>Visitors</span>
+      </div>
+      <button onClick={()=>setModal('invite')} style={{width:36,height:36,borderRadius:'50%',background:'var(--accent)',border:'none',cursor:'pointer',color:'white',fontSize:20,fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center'}}>+</button>
     </div>
 
-    {tab==='my' && <>
-      <button className="btn btn-primary mb-4" style={{width:'100%'}} onClick={()=>setModal('invite')}>+ Create Invitation</button>
-      {invites.map(i=><div key={i.id} className="card">
-        <div className="flex-between"><div><div className="card-title">{i.visitor_name}</div><div className="card-sub">{i.visitor_type} &bull; {i.visitor_phone||''}</div></div>
-        <span className={`badge badge-${i.status==='active'?'green':i.status==='used'?'purple':'red'}`}>{i.status}</span></div>
-        {i.status==='active' && <div className="qr-inline mt-2" onClick={()=>setQrInvite(i)}>
-          <QRCanvas code={i.qr_code} size={80}/>
-          <span className="qr-inline-hint">Tap to share gate pass</span>
-        </div>}
-      </div>)}
-      {!invites.length && <div className="empty">No invitations</div>}
-    </>}
+    {/* Tab bar */}
+    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',margin:'0 16px 12px',background:'var(--card2)',borderRadius:14,padding:3}}>
+      {['expected','inside','history'].map(t=><button key={t} onClick={()=>setTab(t)} style={{
+        padding:'9px 0',borderRadius:11,border:'none',cursor:'pointer',fontSize:13,fontWeight:600,fontFamily:'inherit',
+        background:tab===t?'var(--accent)':'none',color:tab===t?'white':'var(--text2)',transition:'all .2s',
+      }}>{t.charAt(0).toUpperCase()+t.slice(1)}</button>)}
+    </div>
 
-    {tab==='moves' && <>
-      <button className="btn btn-primary mb-4" style={{width:'100%'}} onClick={()=>setModal('move')}>+ Request Move In/Out</button>
-      {moves.map(m=><div key={m.id} className="card">
-        <div className="flex-between">
-          <div>
-            <div className="card-title">{m.move_type==='move_in'?'📦 Move In':'🚚 Move Out'}</div>
-            <div className="card-sub">{m.tentative_start} → {m.tentative_end}</div>
+    {/* Date strip — Expected only */}
+    {tab==='expected' && <div style={{display:'flex',alignItems:'center',gap:8,padding:'0 16px 14px',overflowX:'auto'}}>
+      <span style={{fontSize:16,color:'var(--text2)',flexShrink:0}}>↺</span>
+      {dateStrip.map(d=><button key={d.value} onClick={()=>setSelectedDate(d.value)} style={{
+        flexShrink:0,padding:'7px 14px',borderRadius:20,border:'none',cursor:'pointer',fontFamily:'inherit',fontSize:13,fontWeight:600,
+        background:selectedDate===d.value?'var(--accent)':'var(--card2)',color:selectedDate===d.value?'white':'var(--text)',transition:'all .2s',
+      }}>{d.label}</button>)}
+      <button style={{flexShrink:0,width:30,height:30,borderRadius:'50%',background:'var(--card2)',border:'none',cursor:'pointer',color:'var(--text2)',fontSize:14}}>▾</button>
+    </div>}
+
+    {/* Cards */}
+    <div style={{padding:'0 16px 100px'}}>
+      {cards.length===0 && <div style={{textAlign:'center',padding:'60px 0',color:'var(--text2)'}}>
+        <div style={{fontSize:40,marginBottom:12}}>👥</div>
+        <div style={{fontSize:14}}>{tab==='expected'?'No visitors expected':'No entries found'}</div>
+      </div>}
+      {cards.map((card,i)=>{
+        const initials=(card.name||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+        const isWaiting=card.statusKey==='pending';
+        const isExpanded=expanded===card.id;
+        return <div key={card.id||i} style={{background:'var(--card2)',borderRadius:16,marginBottom:10,overflow:'hidden',border:'1px solid var(--border)'}}>
+          <div style={{display:'flex',alignItems:'center',gap:12,padding:'14px 16px',cursor:isWaiting||card._type==='invite'?'pointer':'default'}}
+            onClick={()=>{ if(isWaiting) setExpanded(isExpanded?null:card.id); if(card._type==='invite'&&card.statusKey==='active') setQrInvite(card.qr); }}>
+            <div style={{width:46,height:46,borderRadius:'50%',background:avatarColor(card.name),display:'flex',alignItems:'center',justifyContent:'center',fontSize:15,fontWeight:700,color:'white',flexShrink:0}}>{initials}</div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontWeight:700,fontSize:15,color:'var(--text)',marginBottom:2}}>{card.name}</div>
+              <div style={{fontSize:12,color:'var(--text2)',marginBottom:5}}>For {card.unit||'—'} · {card.residentName||''}</div>
+              <div style={{display:'flex',gap:5,flexWrap:'wrap'}}>
+                {(card.visitorType||'guest').split(',').map(t=><span key={t} style={{fontSize:11,fontWeight:700,padding:'2px 9px',borderRadius:20,background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.12)',color:typeColor(t.trim())}}>{typeLabel(t.trim())}</span>)}
+              </div>
+            </div>
+            <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:5,flexShrink:0}}>
+              <span style={{fontSize:11,fontWeight:700,padding:'3px 10px',borderRadius:20,...statusStyle(card.status)}}>{card.status}</span>
+              {card.time && <div style={{display:'flex',alignItems:'center',gap:4,fontSize:11,color:'var(--text2)'}}>⏱ {fmtTime(card.time)}</div>}
+            </div>
           </div>
-          <span className={`badge badge-${m.status==='approved'?'green':m.status==='pending'?'orange':'red'}`}>{m.status}</span>
-        </div>
-        {m.status==='rejected' && m.rejection_reason &&
-          <div style={{marginTop:10,padding:'10px 12px',background:'rgba(248,81,73,.1)',borderRadius:10,border:'1px solid rgba(248,81,73,.25)'}}>
-            <span style={{fontSize:11,fontWeight:700,color:'#f85149',display:'block',marginBottom:2}}>Reason</span>
-            <span style={{fontSize:13,color:'#f85149'}}>{m.rejection_reason}</span>
+          {isWaiting && isExpanded && <div style={{display:'flex',justifyContent:'flex-end',gap:10,padding:'0 16px 14px'}}>
+            <button onClick={()=>actOn(card.id,'reject')} disabled={submitting===card.id}
+              style={{padding:'8px 20px',borderRadius:20,border:'1px solid rgba(255,255,255,.2)',background:'rgba(255,255,255,0.08)',color:'var(--text)',fontWeight:600,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}>Deny</button>
+            <button onClick={()=>actOn(card.id,'approve')} disabled={submitting===card.id}
+              style={{padding:'8px 24px',borderRadius:20,border:'none',background:'var(--accent)',color:'white',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}>{submitting===card.id?'…':'Approve'}</button>
           </div>}
-        {m.documents && m.documents.length > 0 &&
-          <div style={{marginTop:10,display:'flex',flexWrap:'wrap',gap:6}}>
-            {m.documents.map(d=><span key={d.id} style={{fontSize:11,padding:'3px 9px',borderRadius:8,background:'var(--card2)',border:'1px solid var(--border)',color:`${d.status==='verified'?'var(--green)':'var(--text2)'}`}}>
-              {d.doc_type.replace(/_/g,' ')} {d.status==='verified'?'✓':''}
-            </span>)}
-          </div>}
-      </div>)}
-      {!moves.length && <div className="empty">No move requests</div>}
-    </>}
+        </div>;
+      })}
+    </div>
 
     {qrInvite && <InviteQRModal invite={qrInvite} onClose={()=>setQrInvite(null)}/>}
     {modal==='invite' && <FormModal title="Create Invitation" onClose={()=>setModal(false)} onSubmit={createInvite} initialData={invitePrefill}
       fields={[{key:'visitorName',label:'Visitor Name'},{key:'visitorPhone',label:'Phone'},{key:'visitorType',label:'Type',type:'select',options:['guest','cab','delivery','daily_help','other']},{key:'purpose',label:'Purpose'},{key:'validFrom',label:'Valid From',type:'datetime-local'},{key:'validTo',label:'Valid To',type:'datetime-local'}]}/>}
-    {modal==='move' && <MoveRequestModal ctx={ctx} onClose={()=>setModal(false)} onSubmit={createMove}/>}
   </div>;
 }
 

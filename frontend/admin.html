@@ -1407,7 +1407,7 @@ function Guards() {
 function NewsAdmin() {
   const [news, setNews] = useState([]);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({title:'', body:'', isPinned:false});
+  const [form, setForm] = useState({title:'', body:'', isPinned:false, category:'society'});
   const [photos, setPhotos] = useState([]); // base64 strings
   const [msg, setMsg] = useState('');
   const fileRef = React.useRef(null);
@@ -1432,7 +1432,7 @@ function NewsAdmin() {
     if(!form.title.trim()) return setMsg('Title is required');
     api('/api/news',{method:'POST',body:JSON.stringify({...form,images:photos})}).then(d=>{
       if(d.error) return setMsg(d.error);
-      setMsg(''); setForm({title:'',body:'',isPinned:false}); setPhotos([]); setShowForm(false);
+      setMsg(''); setForm({title:'',body:'',isPinned:false,category:'society'}); setPhotos([]); setShowForm(false);
       load();
     });
   };
@@ -1487,6 +1487,14 @@ function NewsAdmin() {
       <div className="form-group" style={{display:'flex',alignItems:'center',gap:10}}>
         <input type="checkbox" id="pin-chk" checked={form.isPinned} onChange={e=>setF('isPinned',e.target.checked)} style={{width:16,height:16,accentColor:'var(--accent)'}}/>
         <label htmlFor="pin-chk" style={{fontSize:13,color:'var(--text)',cursor:'pointer'}}>📌 Pin this post to the top</label>
+      </div>
+      <div className="form-group">
+        <label className="label">Category</label>
+        <select className="input" value={form.category} onChange={e=>setF('category',e.target.value)}>
+          <option value="society">Society</option>
+          <option value="events">Events</option>
+          <option value="maintenance">Maintenance</option>
+        </select>
       </div>
       {msg&&<div style={{color:'var(--red)',fontSize:13,marginBottom:12}}>{msg}</div>}
       <button className="btn btn-primary" style={{width:'100%'}} onClick={publish}>Publish Announcement</button>

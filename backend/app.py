@@ -335,6 +335,39 @@ def invite_visitor():
 def my_invitations():
     return jsonify(drs(get_db().execute('SELECT * FROM visitor_invitations WHERE user_id=? AND society_id=? ORDER BY created_at DESC',(g.user['id'],g.soc or '')).fetchall()))
 
+@app.route('/api/visitors/my-entries')
+@auth_required
+def my_entries():
+    db = get_db()
+    if not g.apt: return jsonify([])
+    date = request.args.get('date', '')
+    tab  = request.args.get('tab', 'expected')  # expected | inside | history
+    if tab == 'inside':
+        # Currently checked in (entry_time set, exit_time null, approved)
+        rows = drs(db.execute(
+            "SELECT ve.*, u.name as resident_name FROM visitor_entries ve "
+            "LEFT JOIN users u ON u.id=(SELECT user_id FROM residents WHERE apartment_id=ve.apartment_id LIMIT 1) "
+            "WHERE ve.apartment_id=? AND ve.exit_time IS NULL AND ve.approval_status='approved' "
+            "ORDER BY ve.entry_time DESC", (g.apt,)).fetchall())
+    elif tab == 'history':
+        rows = drs(db.execute(
+            "SELECT ve.* FROM visitor_entries ve "
+            "WHERE ve.apartment_id=? AND (ve.exit_time IS NOT NULL OR ve.approval_status IN ('rejected')) "
+            "ORDER BY ve.created_at DESC LIMIT 50", (g.apt,)).fetchall())
+    else:
+        # Expected: all entries for apartment on a date, or invitations valid for date
+        if date:
+            rows = drs(db.execute(
+                "SELECT ve.* FROM visitor_entries ve "
+                "WHERE ve.apartment_id=? AND date(ve.created_at)=? "
+                "ORDER BY ve.created_at DESC", (g.apt, date)).fetchall())
+        else:
+            rows = drs(db.execute(
+                "SELECT ve.* FROM visitor_entries ve "
+                "WHERE ve.apartment_id=? AND date(ve.created_at)=date('now','localtime') "
+                "ORDER BY ve.created_at DESC", (g.apt,)).fetchall())
+    return jsonify(rows)
+
 @app.route('/api/visitors/pending-approvals')
 @auth_required
 def pending_approvals():
@@ -1183,8 +1216,8 @@ def create_news():
     if not role: return jsonify({'error': 'Admin access required'}), 403
     nid = uid('news-')
     images = d.get('images', [])
-    db.execute("INSERT INTO society_news VALUES(?,?,?,?,?,?,?,CURRENT_TIMESTAMP)",
-               (nid, g.soc, g.user['id'], d['title'], d.get('body',''), _json.dumps(images), 1 if d.get('isPinned') else 0))
+    db.execute("INSERT INTO society_news VALUES(?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)",
+               (nid, g.soc, g.user['id'], d['title'], d.get('body',''), _json.dumps(images), 1 if d.get('isPinned') else 0, d.get('category','society')))
     db.commit()
     notify_news_published(db, g.soc, d['title'], nid)
     return jsonify({'success': True, 'id': nid})
