@@ -318,6 +318,7 @@ def register_push_token():
     return jsonify({'success': True})
 
 
+@app.route('/api/visitors/invite', methods=['POST'])
 @auth_required
 def invite_visitor():
     d = request.json; db = get_db()
