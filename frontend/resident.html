@@ -1659,11 +1659,13 @@ function ProfilePage({ctx,user,onLogout,switchApt,reload,setPage,currentSkin,set
   const [tab, setTab] = useState('info');
   const [modal, setModal] = useState(null);
   const [myExtensions, setMyExtensions] = useState([]);
+  const [myMoves, setMyMoves]           = useState([]);
 
-  const loadProfile = () => api('/api/residents/profile').then(setProfile);
+  const loadProfile    = () => api('/api/residents/profile').then(setProfile);
   const loadExtensions = () => api('/api/lease/my-extensions').then(d => setMyExtensions(Array.isArray(d) ? d : []));
+  const loadMoves      = () => api('/api/move-requests/my').then(d => setMyMoves(Array.isArray(d) ? d : []));
 
-  useEffect(()=>{ loadProfile(); loadExtensions(); },[]);
+  useEffect(()=>{ loadProfile(); loadExtensions(); loadMoves(); },[]);
   if(!profile) return <div className="page">Loading...</div>;
 
   const isTenant = profile.residencies.some(r => r.resident_type === 'tenant' || r.resident_type === 'tenant_family');
@@ -1685,7 +1687,7 @@ function ProfilePage({ctx,user,onLogout,switchApt,reload,setPage,currentSkin,set
     </>}
 
     <div className="tab-bar mt-4">
-      {['info','vehicles','pets','family', ...(isTenant?['lease']:[]), 'appearance'].map(t=><button key={t} className={`tab ${tab===t?'active':''}`} onClick={()=>setTab(t)}>{t.charAt(0).toUpperCase()+t.slice(1)}</button>)}
+      {['info','vehicles','pets','family','moves',...(isTenant?['lease']:[]),'appearance'].map(t=><button key={t} className={`tab ${tab===t?'active':''}`} onClick={()=>setTab(t)}>{t.charAt(0).toUpperCase()+t.slice(1)}</button>)}
     </div>
 
     {tab==='vehicles' && <div>
@@ -1717,6 +1719,37 @@ function ProfilePage({ctx,user,onLogout,switchApt,reload,setPage,currentSkin,set
       {ctx?.resident && <div className="mt-2"><span className={`badge badge-${ctx.resident.status==='approved'?'green':'orange'}`}>{ctx.resident.resident_type} - {ctx.resident.status}</span></div>}
       </div>
       <button className="btn btn-secondary mt-4" style={{width:'100%'}} onClick={onLogout}>Sign Out</button>
+    </div>}
+
+    {tab==='moves' && <div>
+      <div className="flex-between mb-4">
+        <div>
+          <div style={{fontSize:14,fontWeight:700}}>Move Requests</div>
+          <div style={{fontSize:12,color:'var(--text2)',marginTop:2}}>Request move-in or move-out slots</div>
+        </div>
+        <button className="btn btn-sm btn-primary" onClick={()=>setModal('move')}>+ Request</button>
+      </div>
+      {myMoves.length === 0 && <div className="empty">No move requests</div>}
+      {myMoves.map(m => <div key={m.id} className="card" style={{marginBottom:10}}>
+        <div className="flex-between">
+          <div>
+            <div className="card-title">{m.move_type==='move_in'?'📦 Move In':'🚚 Move Out'}</div>
+            <div className="card-sub">{m.tentative_start} → {m.tentative_end}</div>
+          </div>
+          <span className={`badge badge-${m.status==='approved'?'green':m.status==='pending'?'orange':'red'}`}>{m.status}</span>
+        </div>
+        {m.status==='rejected' && m.rejection_reason &&
+          <div style={{marginTop:10,padding:'10px 12px',background:'rgba(248,81,73,.1)',borderRadius:10,border:'1px solid rgba(248,81,73,.25)'}}>
+            <span style={{fontSize:11,fontWeight:700,color:'#f85149',display:'block',marginBottom:2}}>Reason</span>
+            <span style={{fontSize:13,color:'#f85149'}}>{m.rejection_reason}</span>
+          </div>}
+        {m.documents && m.documents.length > 0 &&
+          <div style={{marginTop:10,display:'flex',flexWrap:'wrap',gap:6}}>
+            {m.documents.map(d=><span key={d.id} style={{fontSize:11,padding:'3px 9px',borderRadius:8,background:'var(--card2)',border:'1px solid var(--border)',color:d.status==='verified'?'var(--green)':'var(--text2)'}}>
+              {d.doc_type.replace(/_/g,' ')} {d.status==='verified'?'✓':''}
+            </span>)}
+          </div>}
+      </div>)}
     </div>}
 
     {tab==='lease' && <div>
@@ -1798,6 +1831,11 @@ function ProfilePage({ctx,user,onLogout,switchApt,reload,setPage,currentSkin,set
       fields={[{key:'petType',label:'Type',type:'select',options:['dog','cat','bird','fish','other']},{key:'name',label:'Name'},{key:'breed',label:'Breed'},{key:'ageYears',label:'Age (years)',type:'number'}]}/>}
     {modal==='family' && <FormModal title="Invite Family Member" onClose={()=>setModal(null)} onSubmit={inviteFamily}
       fields={[{key:'name',label:'Name'},{key:'phone',label:'Phone'}]}/>}
+    {modal==='move' && <MoveRequestModal ctx={ctx} onClose={()=>setModal(null)} onSubmit={(details,docs)=>{
+      const docList = Object.entries(docs).map(([type,v])=>({type,fileName:v.fileName,data:v.data}));
+      api('/api/move-requests',{method:'POST',body:JSON.stringify({...details,documents:docList})})
+        .then(()=>{ loadMoves(); setModal(null); });
+    }}/>}
     {modal==='lease' && <LeaseExtensionModal ctx={ctx} onClose={()=>setModal(null)}
       onSubmit={(lid)=>{ loadExtensions(); setModal(null); }}/>}
   </div>;
