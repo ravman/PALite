@@ -2308,6 +2308,98 @@ function FormModal({title, onClose, onSubmit, fields, initialData}) {
   </div>;
 }
 
+function App() {
+  const [token, setToken] = useState(localStorage.getItem('gk_token'));
+  const [ctx, setCtx] = useState(null);
+  const [page, setPage] = useState('home');
+  const [loading, setLoading] = useState(true);
+  const [voiceOpen, setVoiceOpen] = useState(false);
+  const [voiceAction, setVoiceAction] = useState(null);
+  const [currentSkin, setCurrentSkin] = useState(localStorage.getItem('gk_skin') || DEFAULT_SKIN);
+  const [signupState, setSignupState] = useState(null);
+
+  useEffect(()=>{ applyAndPersistSkin(currentSkin); }, [currentSkin]);
+
+  const loadMe = useCallback(()=>{
+    if(!token) { setLoading(false); return; }
+    api('/api/auth/me').then(d=>{
+      if(d.error) { localStorage.removeItem('gk_token'); setToken(null); }
+      else { setCtx(d); }
+      setLoading(false);
+    }).catch(()=>{ setLoading(false); });
+  },[token]);
+
+  useEffect(()=>{ loadMe(); },[loadMe]);
+
+  const handleLogin = (t,u)=>{ localStorage.setItem('gk_token',t); setToken(t); setLoading(true); setTimeout(loadMe,100); };
+  const handleLogout = ()=>{ localStorage.removeItem('gk_token'); setToken(null); setCtx(null); setPage('home'); setSignupState(null); };
+  const handleSignup = (sid, phone, token, user) => { setSignupState({sid, phone, token, user}); };
+  const handleSignupDone = () => {
+    localStorage.setItem('gk_token', signupState.token);
+    setToken(signupState.token);
+    setSignupState(null);
+    setLoading(true);
+    setTimeout(loadMe, 200);
+  };
+  const switchApt = (aptId)=>{ api('/api/context/switch',{method:'POST',body:JSON.stringify({apartmentId:aptId})}).then(()=>loadMe()); };
+
+  if(loading) return <div style={{minHeight:'100vh',background:'var(--bg)',display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:12}}>
+    <div style={{fontSize:32,fontWeight:700,color:'var(--accent2)'}}>PA Lite</div>
+    <div style={{fontSize:13,color:'var(--text2)'}}>Loading...</div>
+  </div>;
+
+  let content;
+  if(signupState) {
+    content = <SignupPage sessionId={signupState.sid} phone={signupState.phone} onDone={handleSignupDone}/>;
+  } else if(!token) {
+    content = <LoginPage onLogin={handleLogin} onSignup={handleSignup}/>;
+  } else {
+    const resident = ctx?.resident;
+    if(resident && (resident.status==='pending' || resident.status==='rejected')) {
+      content = <PendingScreen resident={resident} user={ctx?.user} onLogout={handleLogout} onRefresh={loadMe}/>;
+    } else {
+      const pages = {
+        home:        <HomePage ctx={ctx} setPage={setPage}/>,
+        profile:     <ProfilePage ctx={ctx} user={ctx?.user} onLogout={handleLogout} switchApt={switchApt} reload={loadMe} setPage={setPage} currentSkin={currentSkin} setSkin={setCurrentSkin}/>,
+        bookings:    <BookingsPage setPage={setPage} prefill={voiceAction?.page==='bookings'?voiceAction.prefill:null}/>,
+        visitors:    <VisitorsPage ctx={ctx} setPage={setPage} prefill={voiceAction?.page==='visitors'?voiceAction.prefill:null}/>,
+        marketplace: <MarketplacePage setPage={setPage} prefill={voiceAction?.page==='marketplace'?voiceAction.prefill:null}/>,
+        payments:    <PaymentsPage setPage={setPage}/>,
+        locks:       <LocksPage setPage={setPage}/>,
+        news:        <NewsPage setPage={setPage}/>,
+        admin:       <AdminPanelPage setPage={setPage} ctx={ctx}/>,
+      };
+      content = <div className="app">
+        {voiceOpen && <VoiceAssistant
+          onNavigate={(pg, prefill)=>{ setPage(pg); setVoiceAction({page:pg, prefill:prefill||{}}); setTimeout(()=>setVoiceAction(null),5000); }}
+          onClose={()=>setVoiceOpen(false)}/>}
+        <div className="page-scroll">
+          {pages[page] || pages.home}
+        </div>
+        <div className="nav">
+          <div className="nav-inner">
+            <div className="nav-pill">
+              <button className={`nav-btn ${page==='payments'?'active':''}`} onClick={()=>setPage('payments')}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+                Pay
+              </button>
+              <button className={`nav-center ${voiceOpen?'active-voice':''}`} onClick={()=>setVoiceOpen(true)}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+              </button>
+              <button className={`nav-btn ${page==='bookings'?'active':''}`} onClick={()=>setPage('bookings')}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                Book
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>;
+    }
+  }
+
+  return content;
+}
+
 ReactDOM.render(<App/>, document.getElementById('root'));
 </script>
 </body>
