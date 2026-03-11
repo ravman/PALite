@@ -1254,6 +1254,14 @@ function LoginPage({onLogin, onSignup}) {
       </>}
       {err&&<p style={{color:'var(--red)',fontSize:13,margin:0,textAlign:'center'}}>{err}</p>}
     </div>
+    <div style={{marginTop:32,display:'flex',gap:16,justifyContent:'center'}}>
+      <a href="/guard" style={{fontSize:12,color:'var(--text2)',textDecoration:'none',display:'flex',alignItems:'center',gap:5,padding:'7px 14px',borderRadius:20,border:'1px solid var(--border)'}}>
+        🛡 Guard Portal
+      </a>
+      <a href="/admin" style={{fontSize:12,color:'var(--text2)',textDecoration:'none',display:'flex',alignItems:'center',gap:5,padding:'7px 14px',borderRadius:20,border:'1px solid var(--border)'}}>
+        ⚙️ Admin Console
+      </a>
+    </div>
   </div>;
 }
 

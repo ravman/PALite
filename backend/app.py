@@ -67,6 +67,10 @@ def guard_required(f):
 
 @app.route('/')
 def index(): return send_from_directory('../frontend', 'resident.html')
+@app.route('/guard')
+def guard_app(): return send_from_directory('../frontend', 'guard.html')
+@app.route('/admin')
+def admin_app(): return send_from_directory('../frontend', 'admin.html')
 @app.route('/<path:fn>')
 def static_f(fn): return send_from_directory('../frontend', fn)
 
