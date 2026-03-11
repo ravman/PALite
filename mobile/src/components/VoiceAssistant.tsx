@@ -13,6 +13,8 @@ const PAGES: Record<string, string[]> = {
   Profile:     ['profile', 'account', 'details', 'vehicles', 'pets', 'family'],
   News:        ['news', 'notice', 'announcement', 'updates'],
   Locks:       ['lock', 'unlock', 'door', 'smart lock'],
+  Payments:    ['pay', 'payment', 'invoice', 'bill', 'due', 'maintenance', 'receipt'],
+  Admin:       ['admin', 'panel', 'approve', 'residents', 'pending'],
 };
 
 interface Props {
@@ -93,7 +95,7 @@ export default function VoiceAssistant({ visible, onNavigate, onClose }: Props) 
           max_tokens: 200,
           system: `You are a voice assistant for PA Lite, a residential community app. Extract navigation intent AND form prefill data.
 
-Pages: Home, Bookings (space/amenity booking), Visitors (gate pass, invites, move requests), Marketplace (buy/sell posts), Profile (account, vehicles, pets, family), News (announcements), Locks (smart lock).
+Pages: Home, Bookings (space/amenity booking), Visitors (gate pass, invites, move requests), Marketplace (buy/sell posts), Profile (account, vehicles, pets, family), News (announcements), Locks (smart lock), Payments (invoices, bills, pay dues), Admin (admin panel, approvals - only for admins).
 
 Respond ONLY with JSON:
 {"action":"navigate","page":"Bookings","message":"Booking the gym!","prefill":{"spaceSearch":"gym","date":"2026-03-11","startTime":"06:00","endTime":"07:00"}}

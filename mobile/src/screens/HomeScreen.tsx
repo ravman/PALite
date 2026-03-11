@@ -1,23 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import {
-  View, Text, TouchableOpacity, StyleSheet, ScrollView,
-  Dimensions,
-} from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Dimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { api } from '../api';
 import { colors, spacing } from '../theme';
 
 const { width } = Dimensions.get('window');
 const TILE_SIZE = (width - 40 - 10) / 2;
-
-const TILES = [
-  { key: 'gate',    label: 'Gate',          color: '#9B7B6A', screen: 'Visitors' },
-  { key: 'booking', label: 'Space Booking', color: '#6B7FA3', screen: 'Bookings' },
-  { key: 'visitor', label: 'Visitors',      color: '#C4A882', screen: 'Visitors' },
-  { key: 'market',  label: 'Marketplace',   color: '#8A9E8A', screen: 'Marketplace' },
-  { key: 'news',    label: 'Society News',  color: '#B06B5A', screen: 'News' },
-  { key: 'profile', label: 'My Profile',    color: '#6A7D9B', screen: 'Profile' },
-];
 
 function getGreeting() {
   const h = new Date().getHours();
@@ -26,9 +14,26 @@ function getGreeting() {
   return 'Good Evening,';
 }
 
+const BASE_TILES = [
+  { key: 'gate',    label: 'Gate',          color: '#9B7B6A', screen: 'Visitors',    emoji: '🛵' },
+  { key: 'booking', label: 'Space Booking', color: '#6B7FA3', screen: 'Bookings',    emoji: '🏊' },
+  { key: 'visitor', label: 'Visitors',      color: '#C4A882', screen: 'Visitors',    emoji: '👥' },
+  { key: 'market',  label: 'Marketplace',   color: '#8A9E8A', screen: 'Marketplace', emoji: '🛍️' },
+  { key: 'news',    label: 'Society News',  color: '#B06B5A', screen: 'News',        emoji: '📰' },
+  { key: 'profile', label: 'My Profile',    color: '#6A7D9B', screen: 'Profile',     emoji: '👤' },
+];
+
+const ADMIN_TILE = { key: 'admin', label: 'Admin Panel', color: '#3d2b6e', screen: 'Admin', emoji: '🛡️' };
+
 export default function HomeScreen({ ctx, navigate }: { ctx: any; navigate: (screen: string) => void }) {
   const insets = useSafeAreaInsets();
   const [approvals, setApprovals] = useState<any>({ entries: [], deliveries: [] });
+  const [adminStats, setAdminStats] = useState<any>(null);
+
+  const isAdmin = (ctx?.roles || []).some((r: any) =>
+    r.society_id === ctx?.activeSociety && (r.role === 'admin' || r.role === 'super_admin')
+  );
+
   const firstName = ctx?.user?.name?.split(' ')[0] || 'Resident';
   const aptLabel = ctx?.apartment
     ? `${ctx.apartment.unit_number}, ${ctx?.society?.name || ''}`
@@ -37,11 +42,19 @@ export default function HomeScreen({ ctx, navigate }: { ctx: any; navigate: (scr
 
   useEffect(() => {
     api('/api/visitors/pending-approvals').then(setApprovals).catch(() => {});
-  }, []);
+    if (isAdmin) {
+      api('/api/admin/dashboard').then(setAdminStats).catch(() => {});
+    }
+  }, [isAdmin]);
+
+  const adminPendingBadge = adminStats
+    ? (adminStats.pendingApprovals || 0) + (adminStats.pendingMoves || 0) + (adminStats.pendingDocuments || 0)
+    : 0;
+
+  const tiles = [...BASE_TILES, ...(isAdmin ? [ADMIN_TILE] : [])];
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ paddingTop: insets.top, paddingBottom: 100 }}>
-      {/* Header */}
       <View style={styles.header}>
         <View>
           <Text style={styles.greeting}>{getGreeting()}</Text>
@@ -52,9 +65,6 @@ export default function HomeScreen({ ctx, navigate }: { ctx: any; navigate: (scr
           </TouchableOpacity>
         </View>
         <View style={styles.topRight}>
-          <View style={styles.weatherPill}>
-            <Text style={styles.weatherText}>☁️ 26°C</Text>
-          </View>
           <TouchableOpacity style={styles.notifBtn} onPress={() => navigate('Visitors')}>
             <Text style={styles.notifIcon}>🔔</Text>
             {pendingCount > 0 && <View style={styles.notifDot} />}
@@ -65,23 +75,24 @@ export default function HomeScreen({ ctx, navigate }: { ctx: any; navigate: (scr
         </View>
       </View>
 
-      {/* Tile Grid */}
       <View style={styles.grid}>
-        {TILES.map(t => (
+        {tiles.map(t => (
           <TouchableOpacity
             key={t.key}
             style={[styles.tile, { backgroundColor: t.color }]}
             onPress={() => navigate(t.screen)}
             activeOpacity={0.8}
           >
-            <Text style={styles.tileEmoji}>
-              {t.key === 'gate' ? '🛵' : t.key === 'booking' ? '🏊' : t.key === 'visitor' ? '👥'
-                : t.key === 'market' ? '🛍️' : t.key === 'news' ? '📰' : '👤'}
-            </Text>
+            <Text style={styles.tileEmoji}>{t.emoji}</Text>
             <Text style={styles.tileLabel}>{t.label}</Text>
             {t.key === 'gate' && pendingCount > 0 && (
               <View style={styles.tileBadge}>
                 <Text style={styles.tileBadgeText}>{pendingCount} pending</Text>
+              </View>
+            )}
+            {t.key === 'admin' && adminPendingBadge > 0 && (
+              <View style={[styles.tileBadge, { backgroundColor: 'rgba(253,203,110,0.3)' }]}>
+                <Text style={[styles.tileBadgeText, { color: colors.orange }]}>{adminPendingBadge} pending</Text>
               </View>
             )}
           </TouchableOpacity>
@@ -103,11 +114,6 @@ const styles = StyleSheet.create({
   locText: { fontSize: 12, color: colors.text2 },
   locChevron: { fontSize: 12, color: colors.text2 },
   topRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  weatherPill: {
-    backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 30,
-    paddingHorizontal: 10, paddingVertical: 5,
-  },
-  weatherText: { fontSize: 12, fontWeight: '600', color: colors.text },
   notifBtn: {
     width: 36, height: 36, borderRadius: 18,
     backgroundColor: 'rgba(255,255,255,0.08)',
@@ -124,20 +130,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center',
   },
   avatarText: { fontSize: 14, fontWeight: '700', color: colors.white },
-  grid: {
-    flexDirection: 'row', flexWrap: 'wrap',
-    paddingHorizontal: 20, gap: 10,
-  },
-  tile: {
-    width: TILE_SIZE, height: TILE_SIZE, borderRadius: 20,
-    padding: 16, justifyContent: 'flex-end', overflow: 'hidden',
-  },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 20, gap: 10 },
+  tile: { width: TILE_SIZE, height: TILE_SIZE, borderRadius: 20, padding: 16, justifyContent: 'flex-end', overflow: 'hidden' },
   tileEmoji: { fontSize: 40, position: 'absolute', top: 16, left: 16, opacity: 0.8 },
   tileLabel: { fontSize: 15, fontWeight: '600', color: colors.white },
   tileBadge: {
     position: 'absolute', top: 10, right: 10,
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    borderRadius: 20, paddingHorizontal: 8, paddingVertical: 2,
+    backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: 20, paddingHorizontal: 8, paddingVertical: 2,
   },
   tileBadgeText: { fontSize: 10, fontWeight: '700', color: colors.white },
 });

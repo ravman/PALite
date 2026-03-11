@@ -7,15 +7,17 @@ import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-cont
 import { api, getToken, clearToken } from './src/api';
 import { colors } from './src/theme';
 
-import LoginScreen    from './src/screens/LoginScreen';
-import HomeScreen     from './src/screens/HomeScreen';
-import BookingsScreen from './src/screens/BookingsScreen';
-import VisitorsScreen from './src/screens/VisitorsScreen';
+import LoginScreen      from './src/screens/LoginScreen';
+import HomeScreen       from './src/screens/HomeScreen';
+import BookingsScreen   from './src/screens/BookingsScreen';
+import VisitorsScreen   from './src/screens/VisitorsScreen';
 import MarketplaceScreen from './src/screens/MarketplaceScreen';
-import ProfileScreen  from './src/screens/ProfileScreen';
-import LocksScreen    from './src/screens/LocksScreen';
-import NewsScreen     from './src/screens/NewsScreen';
-import VoiceAssistant from './src/components/VoiceAssistant';
+import ProfileScreen    from './src/screens/ProfileScreen';
+import LocksScreen      from './src/screens/LocksScreen';
+import NewsScreen       from './src/screens/NewsScreen';
+import PaymentsScreen   from './src/screens/PaymentsScreen';
+import AdminScreen      from './src/screens/AdminScreen';
+import VoiceAssistant   from './src/components/VoiceAssistant';
 
 const Stack = createNativeStackNavigator();
 
@@ -30,9 +32,9 @@ function BottomNav({ currentRoute, onNavigate, voiceOpen, onVoiceOpen }: {
   return (
     <View style={[styles.navContainer, { paddingBottom: insets.bottom + 8 }]}>
       <View style={styles.navPill}>
-        <TouchableOpacity style={styles.navBtn} onPress={() => onNavigate('Locks')}>
-          <Text style={[styles.navIcon, currentRoute === 'Locks' && styles.navIconActive]}>🔒</Text>
-          <Text style={[styles.navLabel, currentRoute === 'Locks' && styles.navLabelActive]}>Lock</Text>
+        <TouchableOpacity style={styles.navBtn} onPress={() => onNavigate('Payments')}>
+          <Text style={[styles.navIcon, currentRoute === 'Payments' && styles.navIconActive]}>💳</Text>
+          <Text style={[styles.navLabel, currentRoute === 'Payments' && styles.navLabelActive]}>Pay</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={[styles.navCenter, voiceOpen && styles.navCenterActive]} onPress={onVoiceOpen}>
@@ -48,7 +50,7 @@ function BottomNav({ currentRoute, onNavigate, voiceOpen, onVoiceOpen }: {
   );
 }
 
-// ─── Main navigator with voice ─────────────────────────────────────────────────
+// ─── Main navigator ────────────────────────────────────────────────────────────
 function AppNavigator({ ctx, onLogout, switchApt }: { ctx: any; onLogout: () => void; switchApt: (id: string) => void }) {
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [voiceAction, setVoiceAction] = useState<{ screen: string; prefill: Record<string, string> } | null>(null);
@@ -82,6 +84,8 @@ function AppNavigator({ ctx, onLogout, switchApt }: { ctx: any; onLogout: () => 
           <ProfileScreen navigation={navigation} ctx={ctx} onLogout={onLogout} switchApt={switchApt} />} />
         <Stack.Screen name="Locks" children={() => <LocksScreen navigation={navigation} />} />
         <Stack.Screen name="News" children={() => <NewsScreen navigation={navigation} />} />
+        <Stack.Screen name="Payments" children={() => <PaymentsScreen navigation={navigation} />} />
+        <Stack.Screen name="Admin" children={() => <AdminScreen navigation={navigation} ctx={ctx} />} />
       </Stack.Navigator>
 
       <BottomNav
@@ -103,7 +107,6 @@ function AppNavigator({ ctx, onLogout, switchApt }: { ctx: any; onLogout: () => 
 // ─── Root ───────────────────────────────────────────────────────────────────────
 export default function App() {
   const [token, setTokenState] = useState<string | null>(null);
-  const [user, setUser] = useState<any>(null);
   const [ctx, setCtx] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
@@ -113,19 +116,19 @@ export default function App() {
     setTokenState(t);
     const d = await api('/api/auth/me');
     if (d.error) { await clearToken(); setTokenState(null); }
-    else { setUser(d.user); setCtx(d); }
+    else { setCtx(d); }
     setLoading(false);
   }, []);
 
   useEffect(() => { loadMe(); }, [loadMe]);
 
-  const handleLogin = async (t: string, u: any) => {
-    setTokenState(t); setUser(u); setLoading(true);
+  const handleLogin = async (t: string) => {
+    setTokenState(t); setLoading(true);
     setTimeout(loadMe, 100);
   };
 
   const handleLogout = async () => {
-    await clearToken(); setTokenState(null); setUser(null); setCtx(null);
+    await clearToken(); setTokenState(null); setCtx(null);
   };
 
   const switchApt = async (aptId: string) => {
