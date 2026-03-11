@@ -1610,13 +1610,19 @@ function ProfilePage({ctx,user,onLogout,switchApt,reload,setPage,currentSkin,set
   const [profile, setProfile] = useState(null);
   const [tab, setTab] = useState('info');
   const [modal, setModal] = useState(null);
+  const [myExtensions, setMyExtensions] = useState([]);
 
-  useEffect(()=>{api('/api/residents/profile').then(setProfile);},[]);
+  const loadProfile = () => api('/api/residents/profile').then(setProfile);
+  const loadExtensions = () => api('/api/lease/my-extensions').then(d => setMyExtensions(Array.isArray(d) ? d : []));
+
+  useEffect(()=>{ loadProfile(); loadExtensions(); },[]);
   if(!profile) return <div className="page">Loading...</div>;
 
-  const addVehicle = d=>{api('/api/residents/vehicles',{method:'POST',body:JSON.stringify(d)}).then(()=>{api('/api/residents/profile').then(setProfile);setModal(null);});};
-  const addPet = d=>{api('/api/residents/pets',{method:'POST',body:JSON.stringify(d)}).then(()=>{api('/api/residents/profile').then(setProfile);setModal(null);});};
-  const inviteFamily = d=>{api('/api/residents/invite-family',{method:'POST',body:JSON.stringify(d)}).then(()=>{api('/api/residents/profile').then(setProfile);setModal(null);});};
+  const isTenant = profile.residencies.some(r => r.resident_type === 'tenant' || r.resident_type === 'tenant_family');
+
+  const addVehicle = d=>{api('/api/residents/vehicles',{method:'POST',body:JSON.stringify(d)}).then(()=>{loadProfile();setModal(null);});};
+  const addPet = d=>{api('/api/residents/pets',{method:'POST',body:JSON.stringify(d)}).then(()=>{loadProfile();setModal(null);});};
+  const inviteFamily = d=>{api('/api/residents/invite-family',{method:'POST',body:JSON.stringify(d)}).then(()=>{loadProfile();setModal(null);});};
 
   return <div>
     <PageHeader title="My Profile" onBack={()=>setPage('home')}/>
@@ -1631,7 +1637,7 @@ function ProfilePage({ctx,user,onLogout,switchApt,reload,setPage,currentSkin,set
     </>}
 
     <div className="tab-bar mt-4">
-      {['info','vehicles','pets','family','appearance'].map(t=><button key={t} className={`tab ${tab===t?'active':''}`} onClick={()=>setTab(t)}>{t.charAt(0).toUpperCase()+t.slice(1)}</button>)}
+      {['info','vehicles','pets','family', ...(isTenant?['lease']:[]), 'appearance'].map(t=><button key={t} className={`tab ${tab===t?'active':''}`} onClick={()=>setTab(t)}>{t.charAt(0).toUpperCase()+t.slice(1)}</button>)}
     </div>
 
     {tab==='vehicles' && <div>
@@ -1663,6 +1669,31 @@ function ProfilePage({ctx,user,onLogout,switchApt,reload,setPage,currentSkin,set
       {ctx?.resident && <div className="mt-2"><span className={`badge badge-${ctx.resident.status==='approved'?'green':'orange'}`}>{ctx.resident.resident_type} - {ctx.resident.status}</span></div>}
       </div>
       <button className="btn btn-secondary mt-4" style={{width:'100%'}} onClick={onLogout}>Sign Out</button>
+    </div>}
+
+    {tab==='lease' && <div>
+      <div className="flex-between mb-4">
+        <div>
+          <div style={{fontSize:14,fontWeight:700}}>Lease Extensions</div>
+          <div style={{fontSize:12,color:'var(--text2)',marginTop:2}}>Request to extend your tenancy period</div>
+        </div>
+        <button className="btn btn-sm btn-primary" onClick={()=>setModal('lease')}>+ Request</button>
+      </div>
+      {myExtensions.length === 0 && <div className="empty">No lease extension requests</div>}
+      {myExtensions.map(le => <div key={le.id} className="card" style={{marginBottom:10}}>
+        <div className="flex-between">
+          <div>
+            <div className="card-title">📋 Lease Extension</div>
+            <div className="card-sub">Requested until {le.requested_end}</div>
+          </div>
+          <span className={`badge badge-${le.status==='approved'?'green':le.status==='pending'?'orange':'red'}`}>{le.status}</span>
+        </div>
+        {le.notes && <div style={{fontSize:12,color:'var(--text2)',marginTop:6,fontStyle:'italic'}}>"{le.notes}"</div>}
+        {le.status==='rejected' && <div style={{marginTop:10,padding:'10px 12px',background:'rgba(248,81,73,.1)',borderRadius:10,border:'1px solid rgba(248,81,73,.25)'}}>
+          <span style={{fontSize:11,fontWeight:700,color:'#f85149',display:'block',marginBottom:2}}>Reason</span>
+          <span style={{fontSize:13,color:'#f85149'}}>{le.rejection_reason || 'No reason given'}</span>
+        </div>}
+      </div>)}
     </div>}
 
     {tab==='appearance' && <div>
@@ -1719,6 +1750,8 @@ function ProfilePage({ctx,user,onLogout,switchApt,reload,setPage,currentSkin,set
       fields={[{key:'petType',label:'Type',type:'select',options:['dog','cat','bird','fish','other']},{key:'name',label:'Name'},{key:'breed',label:'Breed'},{key:'ageYears',label:'Age (years)',type:'number'}]}/>}
     {modal==='family' && <FormModal title="Invite Family Member" onClose={()=>setModal(null)} onSubmit={inviteFamily}
       fields={[{key:'name',label:'Name'},{key:'phone',label:'Phone'}]}/>}
+    {modal==='lease' && <LeaseExtensionModal ctx={ctx} onClose={()=>setModal(null)}
+      onSubmit={(lid)=>{ loadExtensions(); setModal(null); }}/>}
   </div>;
 }
 
@@ -2078,6 +2111,158 @@ function MoveRequestModal({ ctx, onClose, onSubmit }) {
 
         {err && <p style={{color:'var(--red)',fontSize:13,margin:'12px 0 0'}}>{err}</p>}
         <button className="btn btn-primary" style={{width:'100%',marginTop:20,padding:14}} onClick={submit} disabled={submitting}>
+          {submitting ? 'Submitting…' : 'Submit Request'}
+        </button>
+      </>}
+    </div>
+  </div>;
+}
+
+// --- Lease Extension Modal (two-step: details → documents) --------------------
+function LeaseExtensionModal({ ctx, onClose, onSubmit }) {
+  const [step, setStep]       = useState('details');
+  const [details, setDetails] = useState({ requestedEnd:'', notes:'' });
+  const [docReqs, setDocReqs] = useState([]);
+  const [docs, setDocs]       = useState({});
+  const [err, setErr]         = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!ctx?.society?.id) return;
+    fetch(`/api/public/lease-doc-requirements?societyId=${ctx.society.id}`)
+      .then(r => r.json()).then(d => setDocReqs(Array.isArray(d) ? d : []));
+  }, [ctx?.society?.id]);
+
+  const goToDocs = () => {
+    if (!details.requestedEnd) return setErr('Please select the extension date');
+    setErr('');
+    // If no doc requirements, skip straight to submit
+    if (docReqs.length === 0) { submitRequest(null); return; }
+    setStep('docs');
+  };
+
+  const handleFile = (docType, file) => {
+    const reader = new FileReader();
+    reader.onload = e => setDocs(d => ({ ...d, [docType]: { fileName: file.name, data: e.target.result } }));
+    reader.readAsDataURL(file);
+  };
+
+  const submitRequest = async (skipDocs) => {
+    if (skipDocs === undefined) {
+      const missing = docReqs.filter(r => r.is_mandatory && !docs[r.doc_type]);
+      if (missing.length) return setErr(`Please upload: ${missing.map(r => r.doc_type.replace(/_/g,' ')).join(', ')}`);
+    }
+    setSubmitting(true);
+    setErr('');
+    try {
+      // Step 1: create the extension
+      const res = await api('/api/lease/extend', { method:'POST', body: JSON.stringify({
+        requestedEnd: details.requestedEnd,
+        notes: details.notes,
+      })});
+      if (res.error) { setErr(res.error); setSubmitting(false); return; }
+      const lid = res.id;
+
+      // Step 2: upload each doc
+      const uploadList = Object.entries(docs);
+      for (const [docType, { fileName, data }] of uploadList) {
+        await api(`/api/lease-extensions/${lid}/documents`, {
+          method: 'POST',
+          body: JSON.stringify({ docType, fileName, data }),
+        });
+      }
+      onSubmit(lid);
+    } catch(e) {
+      setErr('Something went wrong. Please try again.');
+      setSubmitting(false);
+    }
+  };
+
+  return <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',display:'flex',alignItems:'flex-end',zIndex:200}} onClick={e=>e.target===e.currentTarget&&onClose()}>
+    <div style={{background:'var(--card)',borderRadius:'20px 20px 0 0',padding:24,width:'100%',maxHeight:'90vh',overflowY:'auto'}}>
+
+      {/* Header */}
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:20}}>
+        <div style={{display:'flex',alignItems:'center',gap:10}}>
+          {step==='docs' && <button onClick={()=>{setStep('details');setErr('');}}
+            style={{background:'none',border:'none',color:'var(--text2)',cursor:'pointer',fontSize:20,lineHeight:1,padding:0}}>←</button>}
+          <h3 style={{margin:0}}>📋 Lease Extension</h3>
+        </div>
+        <button onClick={onClose} style={{background:'none',border:'none',color:'var(--text2)',cursor:'pointer',fontSize:22,lineHeight:1,padding:0}}>×</button>
+      </div>
+
+      {/* Progress */}
+      {docReqs.length > 0 && <div style={{display:'flex',gap:6,marginBottom:20}}>
+        {['Details','Documents'].map((s,i)=><div key={s} style={{flex:1,height:3,borderRadius:2,
+          background:(step==='details'?i===0:true)?'var(--accent)':'var(--border)'}}/>)}
+      </div>}
+
+      {step==='details' && <>
+        <div style={{display:'flex',flexDirection:'column',gap:14}}>
+          <div className="form-group">
+            <label className="label">Extend lease until *</label>
+            <input className="input" type="date" value={details.requestedEnd}
+              min={new Date().toISOString().split('T')[0]}
+              onChange={e=>setDetails(d=>({...d,requestedEnd:e.target.value}))}/>
+          </div>
+          <div className="form-group">
+            <label className="label">Notes <span style={{color:'var(--text2)',fontWeight:400}}>(optional)</span></label>
+            <textarea className="input" rows={3} placeholder="e.g. Awaiting new apartment — need 3 more months."
+              value={details.notes} onChange={e=>setDetails(d=>({...d,notes:e.target.value}))}
+              style={{resize:'vertical'}}/>
+          </div>
+        </div>
+
+        {docReqs.length > 0 && <div style={{marginTop:16,padding:'12px 14px',background:'rgba(108,92,231,.08)',borderRadius:12,border:'1px solid rgba(108,92,231,.2)'}}>
+          <div style={{fontSize:12,fontWeight:700,color:'var(--accent)',marginBottom:6}}>Documents required</div>
+          <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+            {docReqs.map(r=><span key={r.doc_type} style={{fontSize:11,padding:'3px 9px',borderRadius:8,
+              background:'var(--card2)',border:'1px solid var(--border)',color:'var(--text2)'}}>
+              {r.doc_type.replace(/_/g,' ')} {r.is_mandatory&&<span style={{color:'var(--red)'}}>*</span>}
+            </span>)}
+          </div>
+        </div>}
+
+        {err && <p style={{color:'var(--red)',fontSize:13,margin:'12px 0 0'}}>{err}</p>}
+        <button className="btn btn-primary" style={{width:'100%',marginTop:20,padding:14}} onClick={goToDocs}>
+          {docReqs.length > 0 ? 'Next: Upload Documents →' : (submitting ? 'Submitting…' : 'Submit Request')}
+        </button>
+      </>}
+
+      {step==='docs' && <>
+        <div style={{marginBottom:16,padding:'10px 14px',background:'rgba(108,92,231,.1)',borderRadius:12,fontSize:13,color:'var(--accent)'}}>
+          📋 Extension until <strong>{details.requestedEnd}</strong>
+        </div>
+
+        <div style={{display:'flex',flexDirection:'column',gap:12}}>
+          {docReqs.map(req => {
+            const uploaded = docs[req.doc_type];
+            const label = req.doc_type.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+            return <div key={req.doc_type} style={{background:'var(--card2)',borderRadius:14,padding:16,
+                border:`1px solid ${uploaded?'var(--accent)':'var(--border)'}`}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+                <div>
+                  <span style={{fontSize:13,fontWeight:700,color:'var(--text)'}}>{label}</span>
+                  {req.is_mandatory && <span style={{fontSize:10,color:'var(--red)',marginLeft:6,fontWeight:700}}>REQUIRED</span>}
+                </div>
+                {uploaded && <span style={{fontSize:11,color:'var(--accent)',fontWeight:600}}>✓</span>}
+              </div>
+              {uploaded && <div style={{fontSize:11,color:'var(--text2)',marginBottom:8,wordBreak:'break-all'}}>{uploaded.fileName}</div>}
+              <label>
+                <div style={{padding:'8px 12px',borderRadius:9,border:'1px solid var(--border)',fontSize:12,
+                    color:'var(--text2)',cursor:'pointer',textAlign:'center',background:'var(--card)'}}>
+                  {uploaded ? '↺ Replace' : '📎 Upload PDF / Image'}
+                </div>
+                <input type="file" accept="image/*,.pdf" style={{display:'none'}}
+                  onChange={e=>e.target.files[0]&&handleFile(req.doc_type,e.target.files[0])}/>
+              </label>
+            </div>;
+          })}
+        </div>
+
+        {err && <p style={{color:'var(--red)',fontSize:13,margin:'12px 0 0'}}>{err}</p>}
+        <button className="btn btn-primary" style={{width:'100%',marginTop:20,padding:14}}
+            onClick={()=>submitRequest()} disabled={submitting}>
           {submitting ? 'Submitting…' : 'Submit Request'}
         </button>
       </>}
