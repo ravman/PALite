@@ -324,7 +324,9 @@ def invite_visitor():
     d = request.json; db = get_db()
     if not g.apt: return jsonify({'error':'No active apartment'}), 400
     vid = uid('vinv-'); qr = 'QR-' + uuid.uuid4().hex[:8].upper()
-    db.execute('INSERT INTO visitor_invitations VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)',(vid,g.user['id'],g.apt,g.soc,d['visitorName'],d.get('visitorPhone'),d.get('visitorType','guest'),d.get('purpose'),qr,d.get('validFrom'),d.get('validTo'),1 if d.get('isRecurring') else 0,'active'))
+    visitor_name = d.get('visitorName','').strip()
+    if not visitor_name: return jsonify({'error': 'Visitor name is required'}), 400
+    db.execute('INSERT INTO visitor_invitations VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)',(vid,g.user['id'],g.apt,g.soc,visitor_name,d.get('visitorPhone'),d.get('visitorType','guest'),d.get('purpose'),qr,d.get('validFrom'),d.get('validTo'),1 if d.get('isRecurring') else 0,'active'))
     db.commit()
     return jsonify({'id':vid,'qrCode':qr})
 
