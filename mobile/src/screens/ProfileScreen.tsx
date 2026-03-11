@@ -13,22 +13,30 @@ interface Props { navigation: any; ctx: any; onLogout: () => void; switchApt: (i
 
 export default function ProfileScreen({ navigation, ctx, onLogout, switchApt }: Props) {
   const [profile, setProfile] = useState<any>(null);
-  const [tab, setTab] = useState<'info' | 'vehicles' | 'pets' | 'family' | 'invoices'>('info');
-  const [modal, setModal] = useState<'vehicle' | 'pet' | 'family' | null>(null);
+  const [tab, setTab] = useState<'info' | 'vehicles' | 'pets' | 'family' | 'invoices' | 'moves'>('info');
+  const [modal, setModal] = useState<'vehicle' | 'pet' | 'family' | 'move' | null>(null);
+  const [moves, setMoves] = useState<any[]>([]);
 
-  useEffect(() => { api('/api/residents/profile').then(setProfile); }, []);
+  const loadProfile = () => api('/api/residents/profile').then(setProfile);
+  const loadMoves   = () => api('/api/move-requests/my').then(d => setMoves(Array.isArray(d) ? d : []));
+
+  useEffect(() => { loadProfile(); loadMoves(); }, []);
 
   const addVehicle = async (d: any) => {
     await api('/api/residents/vehicles', { method: 'POST', body: JSON.stringify(d) });
-    api('/api/residents/profile').then(setProfile); setModal(null);
+    loadProfile(); setModal(null);
   };
   const addPet = async (d: any) => {
     await api('/api/residents/pets', { method: 'POST', body: JSON.stringify(d) });
-    api('/api/residents/profile').then(setProfile); setModal(null);
+    loadProfile(); setModal(null);
   };
   const inviteFamily = async (d: any) => {
     await api('/api/residents/invite-family', { method: 'POST', body: JSON.stringify(d) });
-    api('/api/residents/profile').then(setProfile); setModal(null);
+    loadProfile(); setModal(null);
+  };
+  const createMove = async (d: any) => {
+    await api('/api/move-requests', { method: 'POST', body: JSON.stringify({ ...d, documents: [] }) });
+    loadMoves(); setModal(null);
   };
 
   const handleLogout = () => {
@@ -40,7 +48,7 @@ export default function ProfileScreen({ navigation, ctx, onLogout, switchApt }: 
 
   if (!profile) return <View style={styles.container}><Text style={{ color: colors.text2, padding: 40 }}>Loading...</Text></View>;
 
-  const TABS = ['info', 'vehicles', 'pets', 'family', 'invoices'] as const;
+  const TABS = ['info', 'vehicles', 'pets', 'family', 'moves', 'invoices'] as const;
 
   return (
     <View style={styles.container}>
@@ -155,6 +163,32 @@ export default function ProfileScreen({ navigation, ctx, onLogout, switchApt }: 
             {!profile.invoices.length && <Text style={styles.empty}>No invoices</Text>}
           </>
         )}
+
+        {tab === 'moves' && (
+          <>
+            <TouchableOpacity style={styles.addBtn} onPress={() => setModal('move')}>
+              <Text style={styles.addBtnText}>+ Request Move In/Out</Text>
+            </TouchableOpacity>
+            {moves.map((m: any) => (
+              <Card key={m.id}>
+                <View style={styles.row}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.cardTitle}>{m.move_type === 'move_in' ? '📦 Move In' : '🚚 Move Out'}</Text>
+                    <Text style={styles.cardSub}>{m.tentative_start} → {m.tentative_end}</Text>
+                  </View>
+                  <Badge label={m.status} variant={m.status === 'approved' ? 'green' : m.status === 'pending' ? 'orange' : 'red'} />
+                </View>
+                {m.status === 'rejected' && m.rejection_reason ? (
+                  <View style={styles.rejectBox}>
+                    <Text style={styles.rejectLabel}>Reason</Text>
+                    <Text style={styles.rejectText}>{m.rejection_reason}</Text>
+                  </View>
+                ) : null}
+              </Card>
+            ))}
+            {!moves.length && <Text style={styles.empty}>No move requests yet</Text>}
+          </>
+        )}
       </ScrollView>
 
       <FormModal visible={modal === 'vehicle'} title="Add Vehicle"
@@ -164,6 +198,15 @@ export default function ProfileScreen({ navigation, ctx, onLogout, switchApt }: 
       <FormModal visible={modal === 'pet'} title="Add Pet"
         fields={[{ key: 'petType', label: 'Type', type: 'select', options: ['dog', 'cat', 'bird', 'fish', 'other'] }, { key: 'name', label: 'Name' }, { key: 'breed', label: 'Breed' }, { key: 'ageYears', label: 'Age (years)', type: 'number' }]}
         onClose={() => setModal(null)} onSubmit={addPet} />
+
+      <FormModal visible={modal === 'move'} title="Move Request"
+        fields={[
+          { key: 'moveType', label: 'Type', type: 'select', options: ['move_in', 'move_out'] },
+          { key: 'tentativeStart', label: 'Start Date (YYYY-MM-DD)' },
+          { key: 'tentativeEnd', label: 'End Date (YYYY-MM-DD)' },
+          { key: 'notes', label: 'Notes' },
+        ]}
+        onClose={() => setModal(null)} onSubmit={createMove} />
 
       <FormModal visible={modal === 'family'} title="Invite Family Member"
         fields={[{ key: 'name', label: 'Name' }, { key: 'phone', label: 'Phone' }]}
@@ -190,4 +233,7 @@ const styles = StyleSheet.create({
   logoutBtn: { backgroundColor: colors.card2, borderRadius: 10, padding: 14, alignItems: 'center', marginTop: 8, borderWidth: 1, borderColor: colors.border },
   logoutText: { color: colors.text, fontSize: 14, fontWeight: '600' },
   empty: { textAlign: 'center', color: colors.text2, padding: 20 },
+  rejectBox: { marginTop: 10, padding: 10, backgroundColor: 'rgba(225,112,85,.1)', borderRadius: 8, borderWidth: 1, borderColor: 'rgba(225,112,85,.25)' },
+  rejectLabel: { fontSize: 11, fontWeight: '700', color: colors.red, marginBottom: 2 },
+  rejectText: { fontSize: 13, color: colors.red },
 });
