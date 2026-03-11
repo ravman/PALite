@@ -65,12 +65,18 @@ def guard_required(f):
         return f(*a, **kw)
     return dec
 
+def no_cache(resp):
+    resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    resp.headers['Pragma'] = 'no-cache'
+    resp.headers['Expires'] = '0'
+    return resp
+
 @app.route('/')
-def index(): return send_from_directory('../frontend', 'resident.html')
+def index(): return no_cache(send_from_directory('../frontend', 'resident.html'))
 @app.route('/guard')
-def guard_app(): return send_from_directory('../frontend', 'guard.html')
+def guard_app(): return no_cache(send_from_directory('../frontend', 'guard.html'))
 @app.route('/admin')
-def admin_app(): return send_from_directory('../frontend', 'admin.html')
+def admin_app(): return no_cache(send_from_directory('../frontend', 'admin.html'))
 @app.route('/<path:fn>')
 def static_f(fn): return send_from_directory('../frontend', fn)
 
