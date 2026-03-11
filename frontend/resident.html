@@ -506,10 +506,10 @@ function App() {
   // 1. minimum display time (1.8s) has elapsed
   // 2. the auth/loading call has finished
   useEffect(()=>{
-    const minTimer = setTimeout(()=>{ splashDoneRef.current = true; if(!loading) setSplashVisible(false); }, 1800);
+    // After 1.8s minimum, dismiss splash (auth check is fast enough)
+    const minTimer = setTimeout(()=>{ setSplashVisible(false); }, 1800);
     return ()=>clearTimeout(minTimer);
   },[]);
-  useEffect(()=>{ if(!loading && splashDoneRef.current) setSplashVisible(false); },[loading]);
 
   const handleLogin = (t,u)=>{localStorage.setItem('gk_token',t);setToken(t);setUser(u);setLoading(true);setTimeout(loadMe,100);};
   const handleLogout = ()=>{localStorage.removeItem('gk_token');setToken(null);setUser(null);setCtx(null);setPage('home');setSignupState(null);};
