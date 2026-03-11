@@ -142,20 +142,53 @@ function Dashboard() {
 }
 
 function Residents() {
-  const [res,setRes]=useState([]);const [filter,setFilter]=useState('');
-  const [rejectModal,setRejectModal]=useState(null); // {id, name}
-  const [rejectReason,setRejectReason]=useState('');
-  const [rejectErr,setRejectErr]=useState('');
-  const load=()=>api('/api/admin/residents'+(filter?'?status='+filter:'')).then(setRes);
-  useEffect(()=>{load();},[filter]);
+  const [res, setRes] = useState([]);
+  const [filter, setFilter] = useState('');
+  const [reviewTarget, setReviewTarget] = useState(null); // resident object being reviewed
+  const [docs, setDocs] = useState([]);
+  const [docsLoading, setDocsLoading] = useState(false);
+  const [lightbox, setLightbox] = useState(null); // {src, type}
+  const [rejectReason, setRejectReason] = useState('');
+  const [rejectErr, setRejectErr] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [stage, setStage] = useState('docs'); // 'docs' | 'reject'
 
-  const approve=id=>api(`/api/admin/residents/${id}/approve`,{method:'POST'}).then(load);
-  const openReject=r=>{ setRejectModal({id:r.id,name:r.name}); setRejectReason(''); setRejectErr(''); };
-  const submitReject=()=>{
-    if(!rejectReason.trim()) return setRejectErr('Please provide a reason');
-    api(`/api/admin/residents/${rejectModal.id}/reject`,{method:'POST',body:JSON.stringify({reason:rejectReason})})
-      .then(d=>{ if(d.error) return setRejectErr(d.error); setRejectModal(null); load(); });
+  const load = () => api('/api/admin/residents' + (filter ? '?status=' + filter : '')).then(setRes);
+  useEffect(() => { load(); }, [filter]);
+
+  const openReview = (r) => {
+    setReviewTarget(r);
+    setDocs([]);
+    setDocsLoading(true);
+    setRejectReason('');
+    setRejectErr('');
+    setStage('docs');
+    api(`/api/admin/residents/${r.id}/documents`).then(d => {
+      setDocs(Array.isArray(d) ? d : []);
+      setDocsLoading(false);
+    });
   };
+
+  const approve = async () => {
+    setSubmitting(true);
+    await api(`/api/admin/residents/${reviewTarget.id}/approve`, {method:'POST'});
+    setSubmitting(false);
+    setReviewTarget(null);
+    load();
+  };
+
+  const submitReject = async () => {
+    if (!rejectReason.trim()) return setRejectErr('Please provide a reason');
+    setSubmitting(true);
+    const d = await api(`/api/admin/residents/${reviewTarget.id}/reject`, {method:'POST', body:JSON.stringify({reason:rejectReason})});
+    setSubmitting(false);
+    if (d.error) return setRejectErr(d.error);
+    setReviewTarget(null);
+    load();
+  };
+
+  const isImage = (doc) => doc.data && (doc.data.startsWith('data:image') || /\.(jpg|jpeg|png|gif|webp)$/i.test(doc.file_name||''));
+  const isPdf   = (doc) => doc.data && (doc.data.startsWith('data:application/pdf') || /\.pdf$/i.test(doc.file_name||''));
 
   return <div>
     <div className="top-bar"><h2>Residents</h2></div>
@@ -163,34 +196,120 @@ function Residents() {
       {['','pending','approved','rejected'].map(f=><button key={f} className={`tab ${filter===f?'active':''}`} onClick={()=>setFilter(f)}>{f||'All'}</button>)}
     </div>
     <div className="card"><table className="table"><thead><tr><th>Name</th><th>Phone</th><th>Apartment</th><th>Tower</th><th>Type</th><th>Status</th><th>Actions</th></tr></thead><tbody>
-      {res.map(r=><tr key={r.id}><td>{r.name}</td><td>{r.phone}</td><td>{r.unit_number}</td><td>{r.tower_name}</td>
-        <td><span className="badge badge-blue">{r.resident_type}</span></td>
+      {res.map(r=><tr key={r.id}>
+        <td>{r.name}</td><td>{r.phone}</td><td>{r.unit_number}</td><td>{r.tower_name}</td>
+        <td><span className="badge badge-blue">{r.resident_type?.replace(/_/g,' ')}</span></td>
         <td>
           <span className={`badge badge-${r.status==='approved'?'green':r.status==='pending'?'orange':'red'}`}>{r.status}</span>
           {r.status==='rejected'&&r.rejection_reason&&<div style={{fontSize:11,color:'var(--text2)',marginTop:4,maxWidth:180}}>↳ {r.rejection_reason}</div>}
         </td>
-        <td>{r.status==='pending'&&<div className="flex">
-          <button className="btn btn-sm btn-green" onClick={()=>approve(r.id)}>Approve</button>
-          <button className="btn btn-sm btn-red" onClick={()=>openReject(r)}>Reject</button>
-        </div>}</td></tr>)}
+        <td>{r.status==='pending'
+          ? <button className="btn btn-sm btn-primary" onClick={()=>openReview(r)}>Review →</button>
+          : <button className="btn btn-sm" style={{background:'var(--card2)',border:'1px solid var(--border)',color:'var(--text2)'}} onClick={()=>openReview(r)}>View Docs</button>
+        }</td>
+      </tr>)}
     </tbody></table>
     {!res.length&&<div className="empty">No residents found</div>}</div>
 
-    {/* Reject reason modal */}
-    {rejectModal&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000}}>
-      <div style={{background:'var(--card)',borderRadius:16,padding:28,width:420,border:'1px solid var(--border)'}}>
-        <h3 style={{marginBottom:4}}>Reject Application</h3>
-        <p style={{fontSize:13,color:'var(--text2)',marginBottom:16}}>Rejecting <strong>{rejectModal.name}</strong>. This reason will be shown to the applicant.</p>
-        <label className="label">Reason for rejection *</label>
-        <textarea className="input" rows={3} value={rejectReason} onChange={e=>setRejectReason(e.target.value)}
-          placeholder="e.g. Documents incomplete — please resubmit with valid proof of ownership."
-          style={{resize:'vertical',marginBottom:12,width:'100%'}}/>
-        {rejectErr&&<p style={{color:'var(--red)',fontSize:13,marginBottom:10}}>{rejectErr}</p>}
-        <div style={{display:'flex',gap:10}}>
-          <button className="btn btn-primary btn-sm" style={{background:'var(--red)'}} onClick={submitReject}>Confirm Reject</button>
-          <button className="btn btn-sm" style={{background:'var(--card2)',border:'1px solid var(--border)',color:'var(--text)'}} onClick={()=>setRejectModal(null)}>Cancel</button>
+    {/* ── Review modal ─────────────────────────────────────────────── */}
+    {reviewTarget&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.8)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000,padding:16}}>
+      <div style={{background:'var(--card)',borderRadius:20,width:'100%',maxWidth:600,maxHeight:'90vh',display:'flex',flexDirection:'column',border:'1px solid var(--border)'}}>
+
+        {/* Header */}
+        <div style={{padding:'20px 24px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexShrink:0}}>
+          <div>
+            <h3 style={{fontSize:18,marginBottom:4}}>Application Review</h3>
+            <div style={{fontSize:13,color:'var(--text2)'}}>
+              <strong style={{color:'var(--text)'}}>{reviewTarget.name}</strong>
+              {' · '}{reviewTarget.phone}
+              {' · '}{reviewTarget.unit_number}, {reviewTarget.tower_name}
+              {' · '}<span className="badge badge-blue" style={{fontSize:11}}>{reviewTarget.resident_type?.replace(/_/g,' ')}</span>
+            </div>
+          </div>
+          <button onClick={()=>setReviewTarget(null)} style={{background:'none',border:'none',color:'var(--text2)',fontSize:22,cursor:'pointer',lineHeight:1,padding:0,flexShrink:0}}>×</button>
         </div>
+
+        {/* Body — scrollable */}
+        <div style={{overflowY:'auto',flex:1,padding:'20px 24px'}}>
+
+          {stage==='docs' && <>
+            <div style={{fontSize:13,fontWeight:700,color:'var(--text2)',letterSpacing:0.5,textTransform:'uppercase',marginBottom:12}}>
+              Submitted Documents {!docsLoading&&<span style={{fontWeight:400,textTransform:'none',letterSpacing:0}}>({docs.length} file{docs.length!==1?'s':''})</span>}
+            </div>
+
+            {docsLoading && <div style={{padding:'40px 0',textAlign:'center',color:'var(--text2)'}}>Loading documents…</div>}
+
+            {!docsLoading && docs.length===0 && <div style={{padding:'32px 0',textAlign:'center'}}>
+              <div style={{fontSize:36,marginBottom:8}}>📭</div>
+              <div style={{color:'var(--text2)',fontSize:13}}>No documents submitted by this applicant.</div>
+            </div>}
+
+            {!docsLoading && docs.map(doc => <div key={doc.id} style={{background:'var(--card2)',borderRadius:14,padding:16,marginBottom:12,border:`1px solid ${doc.status==='verified'?'var(--green)':'var(--border)'}`}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
+                <div>
+                  <div style={{fontWeight:700,fontSize:14,color:'var(--text)'}}>{doc.doc_type?.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())}</div>
+                  <div style={{fontSize:11,color:'var(--text2)',marginTop:2}}>{doc.file_name} · {new Date(doc.created_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})}</div>
+                </div>
+                <span className={`badge badge-${doc.status==='verified'?'green':doc.status==='pending'?'orange':'red'}`}>{doc.status}</span>
+              </div>
+
+              {/* Document preview */}
+              {isImage(doc) && <div style={{borderRadius:10,overflow:'hidden',cursor:'zoom-in',marginBottom:8}} onClick={()=>setLightbox({src:doc.data,type:'image'})}>
+                <img src={doc.data} alt={doc.doc_type} style={{width:'100%',maxHeight:220,objectFit:'cover',display:'block'}}/>
+                <div style={{fontSize:11,color:'var(--text2)',padding:'6px 0',textAlign:'center'}}>Click to enlarge</div>
+              </div>}
+              {isPdf(doc) && <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',background:'var(--card)',borderRadius:10}}>
+                <span style={{fontSize:28}}>📄</span>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:13,fontWeight:600}}>PDF Document</div>
+                  <div style={{fontSize:11,color:'var(--text2)'}}>{doc.file_name}</div>
+                </div>
+                <a href={doc.data} download={doc.file_name} style={{padding:'7px 14px',borderRadius:8,background:'var(--accent)',color:'white',fontSize:12,fontWeight:700,textDecoration:'none'}}>⬇ Download</a>
+              </div>}
+              {!isImage(doc)&&!isPdf(doc)&&doc.data&&<div style={{fontSize:12,color:'var(--text2)',padding:'8px 0'}}>
+                <a href={doc.data} download={doc.file_name} style={{color:'var(--accent)'}}>⬇ Download {doc.file_name}</a>
+              </div>}
+            </div>)}
+          </>}
+
+          {stage==='reject' && <>
+            <p style={{fontSize:13,color:'var(--text2)',marginBottom:16}}>
+              Rejecting <strong style={{color:'var(--text)'}}>{reviewTarget.name}</strong>. This reason will be shown to the applicant in the app.
+            </p>
+            <label className="label">Reason for rejection *</label>
+            <textarea className="input" rows={4} value={rejectReason} onChange={e=>setRejectReason(e.target.value)}
+              placeholder="e.g. Documents are incomplete — please resubmit with a valid government ID and proof of ownership."
+              style={{resize:'vertical',width:'100%',marginBottom:8}}/>
+            {rejectErr&&<p style={{color:'var(--red)',fontSize:13,marginBottom:8}}>{rejectErr}</p>}
+          </>}
+        </div>
+
+        {/* Footer actions */}
+        {reviewTarget.status==='pending' && <div style={{padding:'16px 24px',borderTop:'1px solid var(--border)',flexShrink:0}}>
+          {stage==='docs' && <div style={{display:'flex',gap:10}}>
+            <button className="btn btn-green" style={{flex:2}} onClick={approve} disabled={submitting}>
+              {submitting ? 'Approving…' : '✓ Approve Application'}
+            </button>
+            <button className="btn" style={{flex:1,background:'var(--card2)',border:'1px solid var(--border)',color:'var(--red)',fontWeight:700}} onClick={()=>setStage('reject')}>
+              ✕ Reject
+            </button>
+          </div>}
+          {stage==='reject' && <div style={{display:'flex',gap:10}}>
+            <button className="btn" style={{flex:1,background:'var(--red)',color:'white',fontWeight:700,border:'none'}} onClick={submitReject} disabled={submitting}>
+              {submitting ? 'Rejecting…' : 'Confirm Reject'}
+            </button>
+            <button className="btn" style={{flex:1,background:'var(--card2)',border:'1px solid var(--border)',color:'var(--text)'}} onClick={()=>setStage('docs')}>
+              ← Back to Docs
+            </button>
+          </div>}
+        </div>}
       </div>
+    </div>}
+
+    {/* Lightbox */}
+    {lightbox&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.95)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:2000,padding:20}} onClick={()=>setLightbox(null)}>
+      <img src={lightbox.src} style={{maxWidth:'100%',maxHeight:'90vh',borderRadius:12,objectFit:'contain'}}/>
+      <button style={{position:'absolute',top:20,right:20,background:'rgba(255,255,255,0.1)',border:'none',color:'white',fontSize:28,width:44,height:44,borderRadius:'50%',cursor:'pointer',lineHeight:1}} onClick={()=>setLightbox(null)}>×</button>
     </div>}
   </div>;
 }

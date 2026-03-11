@@ -735,6 +735,16 @@ def admin_add_doc_req():
 @admin_required
 def admin_del_doc_req(did): get_db().execute('DELETE FROM document_requirements WHERE id=? AND society_id=?',(did,g.soc)); get_db().commit(); return jsonify({'success':True})
 
+@app.route('/api/admin/residents/<rid>/documents')
+@admin_required
+def admin_resident_docs(rid):
+    db = get_db()
+    docs = drs(db.execute(
+        'SELECT id, doc_type, file_name, status, data, created_at FROM documents WHERE resident_id=? AND society_id=? ORDER BY created_at DESC',
+        (rid, g.soc)
+    ).fetchall())
+    return jsonify(docs)
+
 @app.route('/api/admin/documents')
 @admin_required
 def admin_docs():
