@@ -406,18 +406,20 @@ const SPLASH_BG_IMAGE   = null; // e.g. '/static/splash-bg.jpg'
 const SPLASH_LOGO_IMAGE = null; // e.g. '/static/logo.png'
 
 function SplashScreen({ visible }) {
+  const [gone, setGone] = React.useState(false);
+  React.useEffect(()=>{ if(!visible) { const t=setTimeout(()=>setGone(true),520); return ()=>clearTimeout(t); } },[visible]);
+  if(gone) return null;
   return <div style={{
     position:'fixed', inset:0, zIndex:9999,
     display:'flex', flexDirection:'column',
     alignItems:'center', justifyContent:'center',
-    // Background: swap to SPLASH_BG_IMAGE when you have the asset
     background: SPLASH_BG_IMAGE
       ? `url(${SPLASH_BG_IMAGE}) center/cover no-repeat`
       : 'linear-gradient(160deg, #0a0a0f 0%, #1a0f2e 50%, #0a0a1a 100%)',
     transition: 'opacity 0.5s ease, transform 0.5s ease',
     opacity: visible ? 1 : 0,
     transform: visible ? 'scale(1)' : 'scale(1.04)',
-    pointerEvents: visible ? 'all' : 'none',
+    pointerEvents: 'none',
   }}>
     {/* Ambient glow blobs */}
     <div style={{position:'absolute',top:'20%',left:'30%',width:280,height:280,borderRadius:'50%',
@@ -489,7 +491,7 @@ function App() {
   useEffect(()=>{ applyAndPersistSkin(currentSkin); }, [currentSkin]);
   const [signupState, setSignupState] = useState(null);
   const [splashVisible, setSplashVisible] = useState(true);
-  const splashDoneRef = React.useRef(false); // tracks whether min splash time has passed
+
 
   const loadMe = useCallback(()=>{
     if(!token) {setLoading(false); return;}
