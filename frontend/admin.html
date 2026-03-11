@@ -472,7 +472,7 @@ function Approvals() {
           <td>
             {l.status==='pending'
               ? <button className="btn btn-sm btn-primary" onClick={()=>openReview('lease',l)}>Review →</button>
-              : <span style={{fontSize:11,color:'var(--text2)'}}>—</span>}
+              : <button className="btn btn-sm" style={{background:'var(--card2)',border:'1px solid var(--border)',color:'var(--text2)'}} onClick={()=>openReview('lease',l)}>View Docs</button>}
           </td>
         </tr>)}
       </tbody></table>
