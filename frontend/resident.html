@@ -13,12 +13,13 @@
 *{margin:0;padding:0;box-sizing:border-box}
 :root{--bg:#0a0a0f;--card:#14141f;--card2:#1a1a2e;--accent:#6c5ce7;--accent2:#a29bfe;--green:#00b894;--red:#e17055;--orange:#fdcb6e;--text:#e8e8f0;--text2:#8888a0;--border:#2a2a3e;--radius:14px}
 body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
-.app{max-width:480px;margin:0 auto;padding-bottom:80px}
+.app{max-width:480px;margin:0 auto;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+.page-scroll{flex:1;overflow-y:auto;padding-bottom:90px}
 .header{padding:16px 20px;display:flex;align-items:center;justify-content:space-between;background:linear-gradient(135deg,#14141f,#1a1a2e);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100}
 .header h1{font-size:18px;font-weight:700;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
 .header .ctx{font-size:11px;color:var(--text2);text-align:right;cursor:pointer}
 .header .ctx span{color:var(--accent2);font-weight:600}
-.nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;z-index:100;pointer-events:none}
+.nav{width:100%;flex-shrink:0;pointer-events:none}
 .nav-inner{display:flex;align-items:flex-end;justify-content:space-between;padding:0 32px 16px;pointer-events:all}
 .nav-pill{background:var(--nav-bg,rgba(20,20,31,0.96));backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.08);border-radius:50px;display:flex;align-items:center;justify-content:space-between;padding:10px 28px;gap:32px}
 .nav-btn{background:none;border:none;color:var(--text2);cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:9px;font-family:inherit;font-weight:500;transition:.2s;padding:4px 8px;border-radius:20px}
@@ -540,25 +541,27 @@ function App() {
         {voiceOpen && <VoiceAssistant
           onNavigate={(page, prefill)=>{setPage(page); setVoiceAction({page, prefill: prefill||{}}); setTimeout(()=>setVoiceAction(null), 5000);}}
           onClose={()=>setVoiceOpen(false)}/>}
-        {pages[page] || pages.home}
-    <div className="nav">
-      <div className="nav-inner">
-        <div className="nav-pill">
-          <button className={`nav-btn ${page==='payments'?'active':''}`} onClick={()=>setPage('payments')}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
-            Pay
-          </button>
-          <button className={`nav-center ${voiceOpen?'active-voice':''}`} onClick={()=>setVoiceOpen(true)}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
-          </button>
-          <button className={`nav-btn ${page==='bookings'?'active':''}`} onClick={()=>setPage('bookings')}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-            Book
-          </button>
+        <div className="page-scroll">
+          {pages[page] || pages.home}
         </div>
-      </div>
-    </div>
-  </div>;
+        <div className="nav">
+          <div className="nav-inner">
+            <div className="nav-pill">
+              <button className={`nav-btn ${page==='payments'?'active':''}`} onClick={()=>setPage('payments')}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+                Pay
+              </button>
+              <button className={`nav-center ${voiceOpen?'active-voice':''}`} onClick={()=>setVoiceOpen(true)}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+              </button>
+              <button className={`nav-btn ${page==='bookings'?'active':''}`} onClick={()=>setPage('bookings')}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                Book
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>;
     }
   }
 
