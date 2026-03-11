@@ -366,18 +366,27 @@ function Approvals() {
   useEffect(() => { loadM(); loadL(); }, []);
 
   const openReview = (type, obj) => {
-    setReviewTarget({type, obj, docs: []});
+    setReviewTarget({type, obj, docs: [], reqs: []});
     setStage('docs');
     setRejectReason('');
     setRejectErr('');
+    setDocsLoading(true);
     if (type === 'move') {
-      // docs already embedded in the move object with data field
-      setDocsLoading(false);
-      setReviewTarget({type, obj, docs: obj.documents || []});
+      // docs already embedded with data field; fetch reqs to show checklist
+      api(`/api/admin/move-doc-requirements`).then(all => {
+        const reqs = (all||[]).filter(r => r.move_type === obj.move_type);
+        setReviewTarget({type, obj, docs: obj.documents || [], reqs});
+        setDocsLoading(false);
+      });
     } else {
-      // leases have no docs
-      setDocsLoading(false);
-      setReviewTarget({type, obj, docs: []});
+      // fetch both lease docs and lease doc requirements
+      Promise.all([
+        api(`/api/admin/lease-extensions/${obj.id}/documents`),
+        api(`/api/admin/lease-doc-requirements`),
+      ]).then(([docs, reqs]) => {
+        setReviewTarget({type, obj, docs: docs||[], reqs: reqs||[]});
+        setDocsLoading(false);
+      });
     }
   };
 
@@ -485,7 +494,6 @@ function Approvals() {
               {rt.obj.unit_number}, {rt.obj.tower_name}
               {rt.type==='move' && <>{' · '}{fmtDate(rt.obj.tentative_start)} → {fmtDate(rt.obj.tentative_end)}</>}
               {rt.type==='lease' && <>{' · '}Extended to <strong style={{color:'var(--accent)'}}>{fmtDate(rt.obj.requested_end)}</strong></>}
-              {rt.obj.notes && <><br/><span style={{fontStyle:'italic'}}>"{rt.obj.notes}"</span></>}
             </div>
           </div>
           <button onClick={()=>setReviewTarget(null)} style={{background:'none',border:'none',color:'var(--text2)',fontSize:22,cursor:'pointer',lineHeight:1,padding:0,flexShrink:0}}>×</button>
@@ -494,26 +502,49 @@ function Approvals() {
         {/* Body */}
         <div style={{overflowY:'auto',flex:1,padding:'20px 24px'}}>
           {stage==='docs' && <>
-            <div style={{fontSize:13,fontWeight:700,color:'var(--text2)',letterSpacing:0.5,textTransform:'uppercase',marginBottom:12}}>
-              {rt.type==='move' ? <>Submitted Documents <span style={{fontWeight:400,textTransform:'none',letterSpacing:0}}>({rt.docs.length} file{rt.docs.length!==1?'s':''})</span></> : 'Request Details'}
-            </div>
-
-            {rt.type==='lease' && <div style={{background:'var(--card2)',borderRadius:14,padding:20,display:'flex',flexDirection:'column',gap:12}}>
-              {[['Resident', rt.obj.name],['Phone', rt.obj.phone],['Apartment', `${rt.obj.unit_number}, ${rt.obj.tower_name}`],
-                ['Current Lease End', fmtDate(rt.obj.current_end)],['Requested Extension To', fmtDate(rt.obj.requested_end)],
-                ['Notes', rt.obj.notes||'None']].map(([l,v])=>
-                <div key={l} style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:12}}>
-                  <span style={{fontSize:12,color:'var(--text2)',fontWeight:600,flexShrink:0}}>{l}</span>
-                  <span style={{fontSize:13,color:'var(--text)',textAlign:'right'}}>{v}</span>
-                </div>)}
+            {/* Requirements checklist */}
+            {rt.reqs && rt.reqs.length > 0 && <div style={{marginBottom:16}}>
+              <div style={{fontSize:13,fontWeight:700,color:'var(--text2)',letterSpacing:0.5,textTransform:'uppercase',marginBottom:8}}>Required Documents</div>
+              <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+                {rt.reqs.map(req => {
+                  const submitted = rt.docs.find(d => d.doc_type === req.doc_type);
+                  const verified  = submitted?.status === 'verified';
+                  return <div key={req.id} style={{display:'flex',alignItems:'center',gap:5,padding:'5px 10px',borderRadius:20,fontSize:12,fontWeight:600,
+                    background: verified ? 'rgba(63,185,80,0.15)' : submitted ? 'rgba(210,153,34,0.15)' : 'rgba(248,81,73,0.1)',
+                    border: `1px solid ${verified ? 'var(--green)' : submitted ? 'var(--orange)' : 'var(--red)'}`,
+                    color: verified ? 'var(--green)' : submitted ? 'var(--orange)' : 'var(--red)'}}>
+                    {verified ? '✓' : submitted ? '⏳' : '✗'}
+                    {' '}{req.doc_type.replace(/_/g,' ')}
+                    {req.is_mandatory ? '' : ' (optional)'}
+                  </div>;
+                })}
+              </div>
             </div>}
 
-            {rt.type==='move' && rt.docs.length===0 && <div style={{padding:'32px 0',textAlign:'center'}}>
+            <div style={{fontSize:13,fontWeight:700,color:'var(--text2)',letterSpacing:0.5,textTransform:'uppercase',marginBottom:12}}>
+              Submitted Documents
+              {!docsLoading && <span style={{fontWeight:400,textTransform:'none',letterSpacing:0}}> ({rt.docs.length} file{rt.docs.length!==1?'s':''})</span>}
+            </div>
+
+            {docsLoading && <div style={{padding:'40px 0',textAlign:'center',color:'var(--text2)'}}>Loading…</div>}
+
+            {!docsLoading && rt.type==='lease' && rt.reqs.length === 0 && rt.docs.length === 0 && <div style={{padding:'24px 0',textAlign:'center'}}>
+              <div style={{fontSize:36,marginBottom:8}}>📋</div>
+              <div style={{color:'var(--text2)',fontSize:13}}>No document requirements configured for lease extensions.</div>
+              <div style={{color:'var(--text2)',fontSize:12,marginTop:4}}>Add requirements in <strong>Doc Requirements → Lease Extensions</strong>.</div>
+            </div>}
+
+            {!docsLoading && rt.docs.length === 0 && (rt.type === 'move' || rt.reqs.length > 0) && rt.type !== 'lease' && <div style={{padding:'32px 0',textAlign:'center'}}>
               <div style={{fontSize:36,marginBottom:8}}>📭</div>
               <div style={{color:'var(--text2)',fontSize:13}}>No documents submitted with this request.</div>
             </div>}
 
-            {rt.type==='move' && rt.docs.map(doc=><div key={doc.id} style={{background:'var(--card2)',borderRadius:14,padding:16,marginBottom:12,border:`1px solid ${doc.status==='verified'?'var(--green)':'var(--border)'}`}}>
+            {!docsLoading && rt.docs.length === 0 && rt.type === 'lease' && rt.reqs.length > 0 && <div style={{padding:'24px 0',textAlign:'center'}}>
+              <div style={{fontSize:36,marginBottom:8}}>📭</div>
+              <div style={{color:'var(--text2)',fontSize:13}}>No documents uploaded yet by the resident.</div>
+            </div>}
+
+            {!docsLoading && rt.docs.map(doc=><div key={doc.id} style={{background:'var(--card2)',borderRadius:14,padding:16,marginBottom:12,border:`1px solid ${doc.status==='verified'?'var(--green)':'var(--border)'}`}}>
               <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
                 <div>
                   <div style={{fontWeight:700,fontSize:14}}>{doc.doc_type?.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())}</div>
@@ -535,6 +566,18 @@ function Approvals() {
                 <a href={doc.data} download={doc.file_name} style={{padding:'6px 12px',borderRadius:8,background:'var(--accent)',color:'white',fontSize:12,fontWeight:700,textDecoration:'none'}}>⬇ Download</a>
               </div>}
             </div>)}
+
+            {/* Lease details card */}
+            {rt.type==='lease' && <div style={{background:'var(--card2)',borderRadius:14,padding:20,display:'flex',flexDirection:'column',gap:10,marginTop:rt.docs.length?12:0}}>
+              <div style={{fontSize:12,fontWeight:700,color:'var(--text2)',textTransform:'uppercase',letterSpacing:0.5,marginBottom:4}}>Request Details</div>
+              {[['Resident', rt.obj.name],['Phone', rt.obj.phone],['Apartment', `${rt.obj.unit_number}, ${rt.obj.tower_name}`],
+                ['Current Lease End', fmtDate(rt.obj.current_end)],['Requested Extension To', fmtDate(rt.obj.requested_end)],
+                ['Notes', rt.obj.notes||'—']].map(([l,v])=>
+                <div key={l} style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:12}}>
+                  <span style={{fontSize:12,color:'var(--text2)',fontWeight:600,flexShrink:0}}>{l}</span>
+                  <span style={{fontSize:13,color:'var(--text)',textAlign:'right'}}>{v}</span>
+                </div>)}
+            </div>}
           </>}
 
           {stage==='reject' && <>
@@ -610,37 +653,67 @@ function Documents() {
 }
 
 function DocReqs() {
-  const [tab,setTab]=useState('signup');
-  const [reqs,setReqs]=useState([]);const [modal,setModal]=useState(false);
-  const load=()=>api('/api/admin/document-requirements').then(setReqs);
-  useEffect(()=>{load();},[]);
-  const add=d=>{api('/api/admin/document-requirements',{method:'POST',body:JSON.stringify({...d,isMandatory:true})}).then(()=>{load();setModal(false);});};
-  const del=id=>api(`/api/admin/document-requirements/${id}`,{method:'DELETE'}).then(load);
-  const [moveReqs,setMoveReqs]=useState([]);const [moveModal,setMoveModal]=useState(false);
-  const loadM=()=>api('/api/admin/move-doc-requirements').then(setMoveReqs);
-  useEffect(()=>{loadM();},[]);
-  const addM=d=>{api('/api/admin/move-doc-requirements',{method:'POST',body:JSON.stringify({...d,isMandatory:true})}).then(()=>{loadM();setMoveModal(false);});};
-  const delM=id=>api(`/api/admin/move-doc-requirements/${id}`,{method:'DELETE'}).then(loadM);
+  const [tab, setTab] = useState('signup');
+
+  // Signup reqs
+  const [reqs, setReqs] = useState([]); const [modal, setModal] = useState(false);
+  const load  = () => api('/api/admin/document-requirements').then(setReqs);
+  const add   = d  => api('/api/admin/document-requirements', {method:'POST', body:JSON.stringify({...d, isMandatory:true})}).then(()=>{load(); setModal(false);});
+  const del   = id => api(`/api/admin/document-requirements/${id}`, {method:'DELETE'}).then(load);
+
+  // Move reqs
+  const [moveReqs, setMoveReqs] = useState([]); const [moveModal, setMoveModal] = useState(false);
+  const loadM  = () => api('/api/admin/move-doc-requirements').then(setMoveReqs);
+  const addM   = d  => api('/api/admin/move-doc-requirements', {method:'POST', body:JSON.stringify({...d, isMandatory:true})}).then(()=>{loadM(); setMoveModal(false);});
+  const delM   = id => api(`/api/admin/move-doc-requirements/${id}`, {method:'DELETE'}).then(loadM);
+
+  // Lease reqs
+  const [leaseReqs, setLeaseReqs] = useState([]); const [leaseModal, setLeaseModal] = useState(false);
+  const loadL  = () => api('/api/admin/lease-doc-requirements').then(setLeaseReqs);
+  const addL   = d  => api('/api/admin/lease-doc-requirements', {method:'POST', body:JSON.stringify({...d, isMandatory:true})}).then(()=>{loadL(); setLeaseModal(false);});
+  const delL   = id => api(`/api/admin/lease-doc-requirements/${id}`, {method:'DELETE'}).then(loadL);
+
+  useEffect(()=>{ load(); loadM(); loadL(); }, []);
+
+  const DOC_TYPES = ['government_id','address_proof','noc','property_papers','rent_agreement','bank_statement','income_proof','photo','other'];
+
+  const ReqTable = ({rows, onDel, emptyMsg, cols}) => <div className="card">
+    <table className="table"><thead><tr>{cols.map(c=><th key={c}>{c}</th>)}<th>Mandatory</th><th>Actions</th></tr></thead><tbody>
+      {rows.map(r=><tr key={r.id}>
+        {cols.map(c=><td key={c}>
+          {c==='Resident Type' && <span className="badge badge-blue">{r.resident_type?.replace(/_/g,' ')}</span>}
+          {c==='Move Type'     && <span className={`badge badge-${r.move_type==='move_in'?'green':'red'}`}>{r.move_type?.replace('_',' ')}</span>}
+          {c==='Document Type' && <span style={{textTransform:'capitalize'}}>{r.doc_type?.replace(/_/g,' ')}</span>}
+        </td>)}
+        <td><span className={`badge badge-${r.is_mandatory?'red':'blue'}`}>{r.is_mandatory?'Required':'Optional'}</span></td>
+        <td><button className="btn btn-sm btn-red" onClick={()=>onDel(r.id)}>Remove</button></td>
+      </tr>)}
+    </tbody></table>
+    {!rows.length && <div className="empty">{emptyMsg}</div>}
+  </div>;
+
   return <div>
     <div className="top-bar"><h2>Document Requirements</h2>
-      <button className="btn btn-primary" onClick={()=>tab==='signup'?setModal(true):setMoveModal(true)}>+ Add</button>
+      <button className="btn btn-primary" onClick={()=>{ if(tab==='signup') setModal(true); else if(tab==='move') setMoveModal(true); else setLeaseModal(true); }}>+ Add Requirement</button>
     </div>
     <div className="tab-bar">
       <button className={`tab ${tab==='signup'?'active':''}`} onClick={()=>setTab('signup')}>Signup / Residency</button>
       <button className={`tab ${tab==='move'?'active':''}`} onClick={()=>setTab('move')}>Move In / Out</button>
+      <button className={`tab ${tab==='lease'?'active':''}`} onClick={()=>setTab('lease')}>Lease Extensions</button>
     </div>
-    {tab==='signup'&&<div className="card"><table className="table"><thead><tr><th>Resident Type</th><th>Document Type</th><th>Mandatory</th><th>Actions</th></tr></thead><tbody>
-      {reqs.map(r=><tr key={r.id}><td><span className="badge badge-blue">{r.resident_type.replace(/_/g,' ')}</span></td><td>{r.doc_type.replace(/_/g,' ')}</td><td>{r.is_mandatory?'Yes':'No'}</td>
-        <td><button className="btn btn-sm btn-red" onClick={()=>del(r.id)}>Remove</button></td></tr>)}
-    </tbody></table>{!reqs.length&&<div className="empty">No signup requirements configured</div>}</div>}
-    {tab==='move'&&<div className="card"><table className="table"><thead><tr><th>Move Type</th><th>Document Type</th><th>Mandatory</th><th>Actions</th></tr></thead><tbody>
-      {moveReqs.map(r=><tr key={r.id}><td><span className={`badge badge-${r.move_type==='move_in'?'green':'red'}`}>{r.move_type.replace('_',' ')}</span></td><td>{r.doc_type.replace(/_/g,' ')}</td><td>{r.is_mandatory?'Yes':'No'}</td>
-        <td><button className="btn btn-sm btn-red" onClick={()=>delM(r.id)}>Remove</button></td></tr>)}
-    </tbody></table>{!moveReqs.length&&<div className="empty">No move requirements configured</div>}</div>}
-    {modal&&<Modal title="Add Signup Requirement" onClose={()=>setModal(false)} onSubmit={add}
-      fields={[{k:'residentType',l:'Resident Type',type:'select',opts:['owner','owner_family','tenant','tenant_family']},{k:'docType',l:'Document Type',type:'select',opts:['property_papers','government_id','rent_agreement','address_proof','noc','photo','other']}]}/>}
-    {moveModal&&<Modal title="Add Move Requirement" onClose={()=>setMoveModal(false)} onSubmit={addM}
-      fields={[{k:'moveType',l:'Move Type',type:'select',opts:['move_in','move_out']},{k:'docType',l:'Document Type',type:'select',opts:['government_id','address_proof','noc','property_papers','rent_agreement','photo','other']}]}/>}
+
+    {tab==='signup' && <ReqTable rows={reqs} onDel={del} emptyMsg="No signup requirements configured" cols={['Resident Type','Document Type']}/>}
+    {tab==='move'   && <ReqTable rows={moveReqs} onDel={delM} emptyMsg="No move requirements configured" cols={['Move Type','Document Type']}/>}
+    {tab==='lease'  && <ReqTable rows={leaseReqs} onDel={delL} emptyMsg="No lease extension requirements configured" cols={['Document Type']}/>}
+
+    {modal && <Modal title="Add Signup Requirement" onClose={()=>setModal(false)} onSubmit={add}
+      fields={[{k:'residentType',l:'Resident Type',type:'select',opts:['owner','owner_family','tenant','tenant_family']},
+               {k:'docType',l:'Document Type',type:'select',opts:DOC_TYPES}]}/>}
+    {moveModal && <Modal title="Add Move Requirement" onClose={()=>setMoveModal(false)} onSubmit={addM}
+      fields={[{k:'moveType',l:'Move Type',type:'select',opts:['move_in','move_out']},
+               {k:'docType',l:'Document Type',type:'select',opts:DOC_TYPES}]}/>}
+    {leaseModal && <Modal title="Add Lease Extension Requirement" onClose={()=>setLeaseModal(false)} onSubmit={addL}
+      fields={[{k:'docType',l:'Document Type',type:'select',opts:DOC_TYPES}]}/>}
   </div>;
 }
 

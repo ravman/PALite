@@ -671,7 +671,67 @@ def admin_del_move_doc_req(did):
     get_db().commit()
     return jsonify({'success': True})
 
-@app.route('/api/admin/lease-extensions')
+# --- Lease doc requirements ---------------------------------------------------
+@app.route('/api/admin/lease-doc-requirements')
+@admin_required
+def admin_lease_doc_reqs():
+    return jsonify(drs(get_db().execute(
+        'SELECT * FROM lease_doc_requirements WHERE society_id=? ORDER BY doc_type', (g.soc,)).fetchall()))
+
+@app.route('/api/admin/lease-doc-requirements', methods=['POST'])
+@admin_required
+def admin_add_lease_doc_req():
+    d = request.json or {}
+    db = get_db()
+    did = uid('ldr-')
+    db.execute('INSERT INTO lease_doc_requirements VALUES(?,?,?,?,CURRENT_TIMESTAMP)',
+               (did, g.soc, d['docType'], 1 if d.get('isMandatory', True) else 0))
+    db.commit()
+    return jsonify({'success': True})
+
+@app.route('/api/admin/lease-doc-requirements/<did>', methods=['DELETE'])
+@admin_required
+def admin_del_lease_doc_req(did):
+    get_db().execute('DELETE FROM lease_doc_requirements WHERE id=? AND society_id=?', (did, g.soc))
+    get_db().commit()
+    return jsonify({'success': True})
+
+@app.route('/api/public/lease-doc-requirements')
+def public_lease_doc_reqs():
+    sid = request.args.get('societyId', '')
+    return jsonify(drs(get_db().execute(
+        'SELECT * FROM lease_doc_requirements WHERE society_id=?', (sid,)).fetchall()))
+
+# --- Lease documents (resident upload) ----------------------------------------
+@app.route('/api/lease-extensions/<lid>/documents', methods=['POST'])
+@auth_required
+def upload_lease_doc(lid):
+    d = request.json or {}
+    db = get_db()
+    le = dr(db.execute('SELECT * FROM lease_extensions WHERE id=? AND society_id=?', (lid, g.soc or '')).fetchone())
+    if not le: return jsonify({'error': 'Not found'}), 404
+    did = uid('ldoc-')
+    db.execute('INSERT INTO lease_documents VALUES(?,?,?,?,?,?,?,CURRENT_TIMESTAMP)',
+               (did, lid, g.soc, d.get('docType'), d.get('fileName'), d.get('data'), 'pending'))
+    db.commit()
+    return jsonify({'success': True, 'id': did})
+
+@app.route('/api/admin/lease-extensions/<lid>/documents')
+@admin_required
+def admin_lease_docs(lid):
+    return jsonify(drs(get_db().execute(
+        'SELECT * FROM lease_documents WHERE lease_extension_id=? AND society_id=?',
+        (lid, g.soc)).fetchall()))
+
+@app.route('/api/admin/lease-extensions/<lid>/documents/<did>/verify', methods=['POST'])
+@admin_required
+def admin_verify_lease_doc(lid, did):
+    db = get_db()
+    db.execute("UPDATE lease_documents SET status='verified' WHERE id=? AND society_id=?", (did, g.soc))
+    db.commit()
+    return jsonify({'success': True})
+
+
 @admin_required
 def admin_leases():
     return jsonify(drs(get_db().execute("SELECT le.*, u.name, u.phone, a.unit_number, t.name as tower_name FROM lease_extensions le JOIN residents r ON le.resident_id=r.id JOIN users u ON r.user_id=u.id JOIN apartments a ON r.apartment_id=a.id JOIN towers t ON a.tower_id=t.id WHERE le.society_id=? ORDER BY le.created_at DESC",(g.soc,)).fetchall()))
