@@ -348,105 +348,233 @@ function Bookings() {
 }
 
 function Approvals() {
-  const [moves,setMoves]=useState([]);
-  const [leases,setLeases]=useState([]);
-  const [tab,setTab]=useState('moves');
-  const [rejectTarget,setRejectTarget]=useState(null); // {id,name,label}
-  const [rejectReason,setRejectReason]=useState('');
-  const [rejectErr,setRejectErr]=useState('');
-  const [docsTarget,setDocsTarget]=useState(null); // move object to show docs for
+  const [moves, setMoves] = useState([]);
+  const [leases, setLeases] = useState([]);
+  const [tab, setTab] = useState('moves');
 
-  const loadM=()=>api('/api/admin/move-requests').then(setMoves);
-  const loadL=()=>api('/api/admin/lease-extensions').then(setLeases);
-  useEffect(()=>{loadM();loadL();},[]);
+  // Shared review modal state
+  const [reviewTarget, setReviewTarget] = useState(null); // {type:'move'|'lease', obj, docs}
+  const [docsLoading, setDocsLoading] = useState(false);
+  const [stage, setStage] = useState('docs'); // 'docs' | 'reject'
+  const [rejectReason, setRejectReason] = useState('');
+  const [rejectErr, setRejectErr] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [lightbox, setLightbox] = useState(null);
 
-  const openReject=(m)=>{setRejectTarget({id:m.id,name:m.name,label:m.move_type==='move_in'?'Move In':'Move Out'});setRejectReason('');setRejectErr('');};
-  const submitReject=()=>{
-    if(!rejectReason.trim()) return setRejectErr('Please provide a reason');
-    api(`/api/admin/move-requests/${rejectTarget.id}/reject`,{method:'POST',body:JSON.stringify({reason:rejectReason})})
-      .then(d=>{if(d.error) return setRejectErr(d.error); setRejectTarget(null); loadM();});
+  const loadM = () => api('/api/admin/move-requests').then(setMoves);
+  const loadL = () => api('/api/admin/lease-extensions').then(setLeases);
+  useEffect(() => { loadM(); loadL(); }, []);
+
+  const openReview = (type, obj) => {
+    setReviewTarget({type, obj, docs: []});
+    setStage('docs');
+    setRejectReason('');
+    setRejectErr('');
+    if (type === 'move') {
+      // docs already embedded in the move object with data field
+      setDocsLoading(false);
+      setReviewTarget({type, obj, docs: obj.documents || []});
+    } else {
+      // leases have no docs
+      setDocsLoading(false);
+      setReviewTarget({type, obj, docs: []});
+    }
   };
-  const verifyDoc=(mid,did)=>api(`/api/admin/move-requests/${mid}/documents/${did}/verify`,{method:'POST'}).then(loadM);
+
+  const approve = async () => {
+    setSubmitting(true);
+    const {type, obj} = reviewTarget;
+    if (type === 'move') await api(`/api/admin/move-requests/${obj.id}/approve`, {method:'POST'});
+    else await api(`/api/admin/lease-extensions/${obj.id}/approve`, {method:'POST'});
+    setSubmitting(false);
+    setReviewTarget(null);
+    type === 'move' ? loadM() : loadL();
+  };
+
+  const submitReject = async () => {
+    if (!rejectReason.trim()) return setRejectErr('Please provide a reason');
+    setSubmitting(true);
+    const {type, obj} = reviewTarget;
+    let res;
+    if (type === 'move') res = await api(`/api/admin/move-requests/${obj.id}/reject`, {method:'POST', body:JSON.stringify({reason:rejectReason})});
+    else res = await api(`/api/admin/lease-extensions/${obj.id}/reject`, {method:'POST', body:JSON.stringify({reason:rejectReason})});
+    setSubmitting(false);
+    if (res?.error) return setRejectErr(res.error);
+    setReviewTarget(null);
+    type === 'move' ? loadM() : loadL();
+  };
+
+  const verifyDoc = (did) => api(`/api/admin/move-requests/${reviewTarget.obj.id}/documents/${did}/verify`, {method:'POST'})
+    .then(() => {
+      setReviewTarget(t => ({...t, docs: t.docs.map(d => d.id===did ? {...d, status:'verified'} : d)}));
+      loadM();
+    });
+
+  const isImage = d => d.data && (d.data.startsWith('data:image') || /\.(jpg|jpeg|png|gif|webp)$/i.test(d.file_name||''));
+  const isPdf   = d => d.data && (d.data.startsWith('data:application/pdf') || /\.pdf$/i.test(d.file_name||''));
+  const fmtDate = s => s ? new Date(s).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'}) : '—';
+
+  const rt = reviewTarget;
 
   return <div>
     <div className="top-bar"><h2>Approvals</h2></div>
     <div className="tab-bar">
-      <button className={`tab ${tab==='moves'?'active':''}`} onClick={()=>setTab('moves')}>Move Requests</button>
-      <button className={`tab ${tab==='leases'?'active':''}`} onClick={()=>setTab('leases')}>Lease Extensions</button>
+      <button className={`tab ${tab==='moves'?'active':''}`} onClick={()=>setTab('moves')}>
+        Move Requests {moves.filter(m=>m.status==='pending').length>0 && <span className="badge badge-red" style={{marginLeft:4}}>{moves.filter(m=>m.status==='pending').length}</span>}
+      </button>
+      <button className={`tab ${tab==='leases'?'active':''}`} onClick={()=>setTab('leases')}>
+        Lease Extensions {leases.filter(l=>l.status==='pending').length>0 && <span className="badge badge-red" style={{marginLeft:4}}>{leases.filter(l=>l.status==='pending').length}</span>}
+      </button>
     </div>
 
-    {tab==='moves'&&<div className="card">
-      <table className="table"><thead><tr><th>Name</th><th>Apartment</th><th>Type</th><th>Dates</th><th>Docs</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+    {/* ── Move Requests ── */}
+    {tab==='moves' && <div className="card">
+      <table className="table"><thead><tr><th>Name</th><th>Apartment</th><th>Type</th><th>Dates</th><th>Status</th><th>Actions</th></tr></thead><tbody>
         {moves.map(m=><tr key={m.id}>
           <td>{m.name}<br/><span style={{fontSize:11,color:'var(--text2)'}}>{m.phone}</span></td>
           <td>{m.unit_number} · {m.tower_name}</td>
-          <td><span className={`badge badge-${m.move_type==='move_in'?'green':'red'}`}>{m.move_type}</span></td>
-          <td style={{fontSize:12}}>{m.tentative_start}<br/>→ {m.tentative_end}</td>
-          <td>
-            {m.documents&&m.documents.length>0
-              ? <button className="btn btn-sm" style={{fontSize:11}} onClick={()=>setDocsTarget(m)}>
-                  View {m.documents.length} doc{m.documents.length>1?'s':''}
-                </button>
-              : <span style={{fontSize:11,color:'var(--text2)'}}>None</span>}
-          </td>
+          <td><span className={`badge badge-${m.move_type==='move_in'?'green':'red'}`}>{m.move_type?.replace('_',' ')}</span></td>
+          <td style={{fontSize:12}}>{fmtDate(m.tentative_start)}<br/>→ {fmtDate(m.tentative_end)}</td>
           <td>
             <span className={`badge badge-${m.status==='approved'?'green':m.status==='pending'?'orange':'red'}`}>{m.status}</span>
             {m.status==='rejected'&&m.rejection_reason&&<div style={{fontSize:11,color:'var(--text2)',marginTop:3,maxWidth:140}}>↳ {m.rejection_reason}</div>}
           </td>
-          <td>{m.status==='pending'&&<div className="flex">
-            <button className="btn btn-sm btn-green" onClick={()=>api(`/api/admin/move-requests/${m.id}/approve`,{method:'POST'}).then(loadM)}>Approve</button>
-            <button className="btn btn-sm btn-red" onClick={()=>openReject(m)}>Reject</button>
-          </div>}</td>
+          <td>
+            {m.status==='pending'
+              ? <button className="btn btn-sm btn-primary" onClick={()=>openReview('move',m)}>Review →</button>
+              : <button className="btn btn-sm" style={{background:'var(--card2)',border:'1px solid var(--border)',color:'var(--text2)'}} onClick={()=>openReview('move',m)}>View Docs</button>}
+          </td>
         </tr>)}
       </tbody></table>
-      {!moves.length&&<div className="empty">No move requests</div>}
+      {!moves.length && <div className="empty">No move requests</div>}
     </div>}
 
-    {tab==='leases'&&<div className="card"><table className="table"><thead><tr><th>Name</th><th>Apartment</th><th>Current End</th><th>Requested End</th><th>Status</th><th>Actions</th></tr></thead><tbody>
-      {leases.map(l=><tr key={l.id}><td>{l.name}</td><td>{l.unit_number} - {l.tower_name}</td><td>{l.current_end}</td><td>{l.requested_end}</td>
-        <td><span className={`badge badge-${l.status==='approved'?'green':l.status==='pending'?'orange':'red'}`}>{l.status}</span></td>
-        <td>{l.status==='pending'&&<div className="flex"><button className="btn btn-sm btn-green" onClick={()=>api(`/api/admin/lease-extensions/${l.id}/approve`,{method:'POST'}).then(loadL)}>Approve</button><button className="btn btn-sm btn-red" onClick={()=>api(`/api/admin/lease-extensions/${l.id}/reject`,{method:'POST'}).then(loadL)}>Reject</button></div>}</td></tr>)}
-    </tbody></table>{!leases.length&&<div className="empty">No lease extensions</div>}</div>}
-
-    {/* Reject modal */}
-    {rejectTarget&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000}}>
-      <div style={{background:'var(--card)',borderRadius:16,padding:28,width:420,border:'1px solid var(--border)'}}>
-        <h3 style={{marginBottom:4}}>Reject {rejectTarget.label}</h3>
-        <p style={{fontSize:13,color:'var(--text2)',marginBottom:16}}>Rejecting request from <strong>{rejectTarget.name}</strong>. The reason will be shown to them.</p>
-        <label className="label">Reason *</label>
-        <textarea className="input" rows={3} value={rejectReason} onChange={e=>setRejectReason(e.target.value)}
-          placeholder="e.g. Missing NOC from previous society." style={{resize:'vertical',marginBottom:12,width:'100%'}}/>
-        {rejectErr&&<p style={{color:'var(--red)',fontSize:13,marginBottom:10}}>{rejectErr}</p>}
-        <div style={{display:'flex',gap:10}}>
-          <button className="btn btn-sm" style={{background:'var(--red)',color:'white',border:'none'}} onClick={submitReject}>Confirm Reject</button>
-          <button className="btn btn-sm" style={{background:'var(--card2)',border:'1px solid var(--border)',color:'var(--text)'}} onClick={()=>setRejectTarget(null)}>Cancel</button>
-        </div>
-      </div>
+    {/* ── Lease Extensions ── */}
+    {tab==='leases' && <div className="card">
+      <table className="table"><thead><tr><th>Name</th><th>Apartment</th><th>Phone</th><th>Current End</th><th>Requested End</th><th>Notes</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+        {leases.map(l=><tr key={l.id}>
+          <td>{l.name}</td>
+          <td>{l.unit_number} · {l.tower_name}</td>
+          <td style={{fontSize:12}}>{l.phone}</td>
+          <td style={{fontSize:12}}>{fmtDate(l.current_end)}</td>
+          <td style={{fontSize:12,fontWeight:600,color:'var(--accent)'}}>{fmtDate(l.requested_end)}</td>
+          <td style={{fontSize:12,color:'var(--text2)',maxWidth:140}}>{l.notes||'—'}</td>
+          <td><span className={`badge badge-${l.status==='approved'?'green':l.status==='pending'?'orange':'red'}`}>{l.status}</span></td>
+          <td>
+            {l.status==='pending'
+              ? <button className="btn btn-sm btn-primary" onClick={()=>openReview('lease',l)}>Review →</button>
+              : <span style={{fontSize:11,color:'var(--text2)'}}>—</span>}
+          </td>
+        </tr>)}
+      </tbody></table>
+      {!leases.length && <div className="empty">No lease extensions</div>}
     </div>}
 
-    {/* Document viewer */}
-    {docsTarget&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.8)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000,padding:20}}>
-      <div style={{background:'var(--card)',borderRadius:16,padding:24,width:'100%',maxWidth:560,maxHeight:'85vh',overflowY:'auto',border:'1px solid var(--border)'}}>
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
-          <h3 style={{margin:0}}>Documents — {docsTarget.name}</h3>
-          <button onClick={()=>setDocsTarget(null)} style={{background:'none',border:'none',color:'var(--text2)',cursor:'pointer',fontSize:22}}>×</button>
-        </div>
-        <div style={{display:'flex',flexDirection:'column',gap:12}}>
-          {docsTarget.documents.map(d=><div key={d.id} style={{background:'var(--card2)',borderRadius:12,padding:16,border:`1px solid ${d.status==='verified'?'var(--green)':'var(--border)'}`}}>
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
-              <div>
-                <span style={{fontWeight:700,fontSize:13}}>{d.doc_type.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())}</span>
-                <span style={{fontSize:11,color:'var(--text2)',marginLeft:8}}>{d.file_name}</span>
-              </div>
-              <span className={`badge badge-${d.status==='verified'?'green':'orange'}`}>{d.status}</span>
+    {/* ── Review Modal ── */}
+    {rt && <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.8)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000,padding:16}}>
+      <div style={{background:'var(--card)',borderRadius:20,width:'100%',maxWidth:600,maxHeight:'90vh',display:'flex',flexDirection:'column',border:'1px solid var(--border)'}}>
+
+        {/* Header */}
+        <div style={{padding:'20px 24px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexShrink:0}}>
+          <div>
+            <h3 style={{fontSize:18,marginBottom:4}}>
+              {rt.type==='move' ? (rt.obj.move_type==='move_in'?'📦 Move In':'🚚 Move Out') : '📋 Lease Extension'} Review
+            </h3>
+            <div style={{fontSize:13,color:'var(--text2)',lineHeight:1.7}}>
+              <strong style={{color:'var(--text)'}}>{rt.obj.name}</strong>{' · '}{rt.obj.phone}<br/>
+              {rt.obj.unit_number}, {rt.obj.tower_name}
+              {rt.type==='move' && <>{' · '}{fmtDate(rt.obj.tentative_start)} → {fmtDate(rt.obj.tentative_end)}</>}
+              {rt.type==='lease' && <>{' · '}Extended to <strong style={{color:'var(--accent)'}}>{fmtDate(rt.obj.requested_end)}</strong></>}
+              {rt.obj.notes && <><br/><span style={{fontStyle:'italic'}}>"{rt.obj.notes}"</span></>}
             </div>
-            {d.data&&(d.data.startsWith('data:image')?
-              <img src={d.data} style={{width:'100%',borderRadius:8,maxHeight:200,objectFit:'contain',background:'#000'}} alt={d.doc_type}/>:
-              <div style={{fontSize:12,color:'var(--text2)',padding:8,background:'var(--card)',borderRadius:8}}>PDF document — <a href={d.data} download={d.file_name} style={{color:'var(--accent)'}}>Download</a></div>)}
-            {d.status!=='verified'&&<button className="btn btn-sm btn-green" style={{marginTop:8}} onClick={()=>verifyDoc(docsTarget.id,d.id)}>✓ Mark Verified</button>}
-          </div>)}
+          </div>
+          <button onClick={()=>setReviewTarget(null)} style={{background:'none',border:'none',color:'var(--text2)',fontSize:22,cursor:'pointer',lineHeight:1,padding:0,flexShrink:0}}>×</button>
         </div>
+
+        {/* Body */}
+        <div style={{overflowY:'auto',flex:1,padding:'20px 24px'}}>
+          {stage==='docs' && <>
+            <div style={{fontSize:13,fontWeight:700,color:'var(--text2)',letterSpacing:0.5,textTransform:'uppercase',marginBottom:12}}>
+              {rt.type==='move' ? <>Submitted Documents <span style={{fontWeight:400,textTransform:'none',letterSpacing:0}}>({rt.docs.length} file{rt.docs.length!==1?'s':''})</span></> : 'Request Details'}
+            </div>
+
+            {rt.type==='lease' && <div style={{background:'var(--card2)',borderRadius:14,padding:20,display:'flex',flexDirection:'column',gap:12}}>
+              {[['Resident', rt.obj.name],['Phone', rt.obj.phone],['Apartment', `${rt.obj.unit_number}, ${rt.obj.tower_name}`],
+                ['Current Lease End', fmtDate(rt.obj.current_end)],['Requested Extension To', fmtDate(rt.obj.requested_end)],
+                ['Notes', rt.obj.notes||'None']].map(([l,v])=>
+                <div key={l} style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:12}}>
+                  <span style={{fontSize:12,color:'var(--text2)',fontWeight:600,flexShrink:0}}>{l}</span>
+                  <span style={{fontSize:13,color:'var(--text)',textAlign:'right'}}>{v}</span>
+                </div>)}
+            </div>}
+
+            {rt.type==='move' && rt.docs.length===0 && <div style={{padding:'32px 0',textAlign:'center'}}>
+              <div style={{fontSize:36,marginBottom:8}}>📭</div>
+              <div style={{color:'var(--text2)',fontSize:13}}>No documents submitted with this request.</div>
+            </div>}
+
+            {rt.type==='move' && rt.docs.map(doc=><div key={doc.id} style={{background:'var(--card2)',borderRadius:14,padding:16,marginBottom:12,border:`1px solid ${doc.status==='verified'?'var(--green)':'var(--border)'}`}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
+                <div>
+                  <div style={{fontWeight:700,fontSize:14}}>{doc.doc_type?.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())}</div>
+                  <div style={{fontSize:11,color:'var(--text2)',marginTop:2}}>{doc.file_name}</div>
+                </div>
+                <div style={{display:'flex',alignItems:'center',gap:8}}>
+                  <span className={`badge badge-${doc.status==='verified'?'green':'orange'}`}>{doc.status}</span>
+                  {doc.status!=='verified' && rt.obj.status==='pending' &&
+                    <button className="btn btn-sm btn-green" onClick={()=>verifyDoc(doc.id)}>✓ Verify</button>}
+                </div>
+              </div>
+              {isImage(doc) && <div style={{borderRadius:10,overflow:'hidden',cursor:'zoom-in',marginBottom:4}} onClick={()=>setLightbox(doc.data)}>
+                <img src={doc.data} style={{width:'100%',maxHeight:220,objectFit:'cover',display:'block'}}/>
+                <div style={{fontSize:11,color:'var(--text2)',padding:'4px 0',textAlign:'center'}}>Click to enlarge</div>
+              </div>}
+              {isPdf(doc) && <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',background:'var(--card)',borderRadius:10}}>
+                <span style={{fontSize:24}}>📄</span>
+                <div style={{flex:1}}><div style={{fontSize:13,fontWeight:600}}>PDF</div><div style={{fontSize:11,color:'var(--text2)'}}>{doc.file_name}</div></div>
+                <a href={doc.data} download={doc.file_name} style={{padding:'6px 12px',borderRadius:8,background:'var(--accent)',color:'white',fontSize:12,fontWeight:700,textDecoration:'none'}}>⬇ Download</a>
+              </div>}
+            </div>)}
+          </>}
+
+          {stage==='reject' && <>
+            <p style={{fontSize:13,color:'var(--text2)',marginBottom:16}}>
+              Rejecting request from <strong style={{color:'var(--text)'}}>{rt.obj.name}</strong>. This reason will be shown to them in the app.
+            </p>
+            <label className="label">Reason for rejection *</label>
+            <textarea className="input" rows={4} value={rejectReason} onChange={e=>setRejectReason(e.target.value)}
+              placeholder={rt.type==='move' ? 'e.g. Missing NOC document — please resubmit.' : 'e.g. Lease extension not approved by management.'}
+              style={{resize:'vertical',width:'100%',marginBottom:8}}/>
+            {rejectErr && <p style={{color:'var(--red)',fontSize:13}}>{rejectErr}</p>}
+          </>}
+        </div>
+
+        {/* Footer */}
+        {rt.obj.status==='pending' && <div style={{padding:'16px 24px',borderTop:'1px solid var(--border)',flexShrink:0}}>
+          {stage==='docs' && <div style={{display:'flex',gap:10}}>
+            <button className="btn btn-green" style={{flex:2}} onClick={approve} disabled={submitting}>
+              {submitting ? 'Approving…' : '✓ Approve'}
+            </button>
+            <button className="btn" style={{flex:1,background:'var(--card2)',border:'1px solid var(--border)',color:'var(--red)',fontWeight:700}} onClick={()=>setStage('reject')}>
+              ✕ Reject
+            </button>
+          </div>}
+          {stage==='reject' && <div style={{display:'flex',gap:10}}>
+            <button className="btn" style={{flex:1,background:'var(--red)',color:'white',fontWeight:700,border:'none'}} onClick={submitReject} disabled={submitting}>
+              {submitting ? 'Rejecting…' : 'Confirm Reject'}
+            </button>
+            <button className="btn" style={{flex:1,background:'var(--card2)',border:'1px solid var(--border)',color:'var(--text)'}} onClick={()=>setStage('docs')}>
+              ← Back
+            </button>
+          </div>}
+        </div>}
       </div>
+    </div>}
+
+    {/* Lightbox */}
+    {lightbox && <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.95)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:2000,padding:20}} onClick={()=>setLightbox(null)}>
+      <img src={lightbox} style={{maxWidth:'100%',maxHeight:'90vh',borderRadius:12,objectFit:'contain'}}/>
+      <button style={{position:'absolute',top:20,right:20,background:'rgba(255,255,255,0.1)',border:'none',color:'white',fontSize:28,width:44,height:44,borderRadius:'50%',cursor:'pointer'}} onClick={()=>setLightbox(null)}>×</button>
     </div>}
   </div>;
 }
