@@ -1132,10 +1132,13 @@ function InvoicesAdmin() {
   const [modal, setModal]         = useState(false);
   const [recipients, setRecipients] = useState(null); // {invoiceId, rows}
   // Raise invoice form state
-  const [form, setForm] = useState({title:'',description:'',invoiceType:'maintenance',amount:'',dueDate:'',notes:'',target:'all',residentTypes:[],});
-  const [preview, setPreview]     = useState(null);  // previewed recipients
-  const [submitting, setSubmitting] = useState(false);
-  const [err, setErr]             = useState('');
+  const [form, setForm] = useState({title:'',description:'',invoiceType:'maintenance',amount:'',dueDate:'',notes:'',target:'all',residentTypes:[],apartmentIds:[],userIds:[]});
+  const [preview, setPreview]         = useState(null);
+  const [submitting, setSubmitting]   = useState(false);
+  const [err, setErr]                 = useState('');
+  const [allApartments, setAllApartments] = useState([]);
+  const [allResidents, setAllResidents]   = useState([]);
+  const [residentSearch, setResidentSearch] = useState('');
 
   const TYPES = ['maintenance','repair','utility','amenity','event','other'];
   const RES_TYPES = ['owner','owner_family','tenant','tenant_family'];
@@ -1151,24 +1154,34 @@ function InvoicesAdmin() {
   const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'}) : '—';
 
   const openModal = () => {
-    setForm({title:'',description:'',invoiceType:'maintenance',amount:'',dueDate:'',notes:'',target:'all',residentTypes:[]});
-    setPreview(null); setErr(''); setModal(true);
+    setForm({title:'',description:'',invoiceType:'maintenance',amount:'',dueDate:'',notes:'',target:'all',residentTypes:[],apartmentIds:[],userIds:[]});
+    setPreview(null); setErr(''); setResidentSearch(''); setModal(true);
+    // Load apartments + residents for pickers
+    api('/api/admin/apartments').then(d => setAllApartments(Array.isArray(d)?d:[]));
+    api('/api/admin/residents?status=approved').then(d => setAllResidents(Array.isArray(d)?d:[]));
   };
 
   const fetchPreview = async () => {
     const res = await api('/api/admin/invoices/preview-recipients', {method:'POST', body: JSON.stringify({
-      target: form.target, residentTypes: form.residentTypes
+      target: form.target, residentTypes: form.residentTypes,
+      apartmentIds: form.apartmentIds, userIds: form.userIds,
     })});
     setPreview(Array.isArray(res) ? res : []);
   };
-  React.useEffect(()=>{ if(modal) fetchPreview(); },[form.target, form.residentTypes.join(','), modal]);
+  React.useEffect(()=>{
+    if(modal) fetchPreview();
+  },[form.target, form.residentTypes.join(','), form.apartmentIds.join(','), form.userIds.join(','), modal]);
 
   const toggleResType = t => setForm(f => ({...f, residentTypes: f.residentTypes.includes(t) ? f.residentTypes.filter(x=>x!==t) : [...f.residentTypes, t]}));
+  const toggleApt    = id => setForm(f => ({...f, apartmentIds: f.apartmentIds.includes(id) ? f.apartmentIds.filter(x=>x!==id) : [...f.apartmentIds, id]}));
+  const toggleUser   = id => setForm(f => ({...f, userIds: f.userIds.includes(id) ? f.userIds.filter(x=>x!==id) : [...f.userIds, id]}));
 
   const submit = async () => {
     if(!form.title.trim()) return setErr('Title is required');
     if(!form.amount || isNaN(form.amount)) return setErr('Valid amount is required');
     if(form.target==='type' && !form.residentTypes.length) return setErr('Select at least one resident type');
+    if(form.target==='apartment' && !form.apartmentIds.length) return setErr('Select at least one apartment');
+    if(form.target==='specific' && !form.userIds.length) return setErr('Select at least one resident');
     setSubmitting(true); setErr('');
     const res = await api('/api/admin/invoices', {method:'POST', body: JSON.stringify(form)});
     setSubmitting(false);
@@ -1342,17 +1355,21 @@ function InvoicesAdmin() {
         {/* Recipients section */}
         <div style={{background:'var(--card2)',borderRadius:12,padding:16,marginBottom:16}}>
           <label style={{fontSize:12,color:'var(--text2)',fontWeight:700,display:'block',marginBottom:10,letterSpacing:0.5,textTransform:'uppercase'}}>Send To</label>
-          <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:form.target==='type'?12:0}}>
-            {[['all','All Residents'],['type','By Type']].map(([v,l])=>
-              <button key={v} onClick={()=>setForm(f=>({...f,target:v,residentTypes:[]}))}
-                style={{padding:'7px 14px',borderRadius:20,border:`2px solid ${form.target===v?'var(--accent)':'var(--border)'}`,
+
+          {/* Target selector */}
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:12}}>
+            {[['all','🏘 All Residents'],['type','🏷 By Type'],['apartment','🏢 By Apartment'],['specific','👤 Specific Residents']].map(([v,l])=>
+              <button key={v} onClick={()=>setForm(f=>({...f,target:v,residentTypes:[],apartmentIds:[],userIds:[]}))}
+                style={{padding:'8px 12px',borderRadius:10,border:`2px solid ${form.target===v?'var(--accent)':'var(--border)'}`,
                   background:form.target===v?'rgba(108,92,231,.15)':'transparent',
                   color:form.target===v?'var(--accent)':'var(--text2)',cursor:'pointer',
-                  fontFamily:'inherit',fontWeight:600,fontSize:13}}>
+                  fontFamily:'inherit',fontWeight:600,fontSize:12,textAlign:'left'}}>
                 {l}
               </button>)}
           </div>
-          {form.target==='type' && <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:10}}>
+
+          {/* By Type — resident type chips */}
+          {form.target==='type' && <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:8}}>
             {RES_TYPES.map(t=>{
               const sel = form.residentTypes.includes(t);
               return <button key={t} onClick={()=>toggleResType(t)}
@@ -1364,13 +1381,67 @@ function InvoicesAdmin() {
             })}
           </div>}
 
+          {/* By Apartment — scrollable apartment list */}
+          {form.target==='apartment' && <div>
+            <div style={{maxHeight:180,overflowY:'auto',border:'1px solid var(--border)',borderRadius:8,marginBottom:8}}>
+              {allApartments.length===0 && <div style={{padding:12,fontSize:12,color:'var(--text2)'}}>Loading apartments…</div>}
+              {allApartments.map(a => {
+                const sel = form.apartmentIds.includes(a.id);
+                return <div key={a.id} onClick={()=>toggleApt(a.id)}
+                  style={{display:'flex',alignItems:'center',gap:10,padding:'8px 12px',cursor:'pointer',borderBottom:'1px solid var(--border)',
+                    background:sel?'rgba(108,92,231,.1)':'transparent'}}>
+                  <div style={{width:16,height:16,borderRadius:4,border:`2px solid ${sel?'var(--accent)':'var(--border)'}`,background:sel?'var(--accent)':'transparent',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
+                    {sel && <span style={{color:'white',fontSize:10,fontWeight:700}}>✓</span>}
+                  </div>
+                  <span style={{fontWeight:600,fontSize:13}}>{a.unit_number}</span>
+                  <span style={{fontSize:12,color:'var(--text2)'}}>{a.tower_name} · Floor {a.floor||'—'} · {a.bedrooms||2} BHK</span>
+                </div>;
+              })}
+            </div>
+            {form.apartmentIds.length>0 && <div style={{fontSize:12,color:'var(--accent)',fontWeight:600}}>{form.apartmentIds.length} apartment{form.apartmentIds.length!==1?'s':''} selected
+              <button onClick={()=>setForm(f=>({...f,apartmentIds:[]}))} style={{marginLeft:8,background:'none',border:'none',cursor:'pointer',color:'var(--text2)',fontSize:12}}>Clear</button>
+            </div>}
+          </div>}
+
+          {/* Specific Residents — search + checklist */}
+          {form.target==='specific' && <div>
+            <div style={{position:'relative',marginBottom:8}}>
+              <span style={{position:'absolute',left:10,top:'50%',transform:'translateY(-50%)',color:'var(--text2)',fontSize:13,pointerEvents:'none'}}>🔍</span>
+              <input value={residentSearch} onChange={e=>setResidentSearch(e.target.value)} placeholder="Search name, phone, unit…"
+                style={{width:'100%',paddingLeft:30,height:32,borderRadius:8,border:'1px solid var(--border)',background:'var(--card)',color:'var(--text)',fontSize:12,fontFamily:'inherit',boxSizing:'border-box'}}/>
+            </div>
+            <div style={{maxHeight:180,overflowY:'auto',border:'1px solid var(--border)',borderRadius:8,marginBottom:8}}>
+              {allResidents.length===0 && <div style={{padding:12,fontSize:12,color:'var(--text2)'}}>Loading residents…</div>}
+              {allResidents
+                .filter(r => !residentSearch || [r.name,r.phone,r.unit_number,r.tower_name].some(v=>(v||'').toLowerCase().includes(residentSearch.toLowerCase())))
+                .map(r => {
+                  const sel = form.userIds.includes(r.user_id);
+                  return <div key={r.user_id} onClick={()=>toggleUser(r.user_id)}
+                    style={{display:'flex',alignItems:'center',gap:10,padding:'8px 12px',cursor:'pointer',borderBottom:'1px solid var(--border)',
+                      background:sel?'rgba(108,92,231,.1)':'transparent'}}>
+                    <div style={{width:16,height:16,borderRadius:4,border:`2px solid ${sel?'var(--accent)':'var(--border)'}`,background:sel?'var(--accent)':'transparent',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
+                      {sel && <span style={{color:'white',fontSize:10,fontWeight:700}}>✓</span>}
+                    </div>
+                    <div style={{flex:1}}>
+                      <span style={{fontWeight:600,fontSize:13}}>{r.name}</span>
+                      <span style={{fontSize:11,color:'var(--text2)',marginLeft:8}}>{r.unit_number} · {r.tower_name}</span>
+                    </div>
+                    <span style={{fontSize:11,color:'var(--text2)'}}>{r.phone}</span>
+                  </div>;
+              })}
+            </div>
+            {form.userIds.length>0 && <div style={{fontSize:12,color:'var(--accent)',fontWeight:600}}>{form.userIds.length} resident{form.userIds.length!==1?'s':''} selected
+              <button onClick={()=>setForm(f=>({...f,userIds:[]}))} style={{marginLeft:8,background:'none',border:'none',cursor:'pointer',color:'var(--text2)',fontSize:12}}>Clear</button>
+            </div>}
+          </div>}
+
           {/* Preview */}
           {preview !== null && <div style={{marginTop:12,padding:'10px 14px',background:'rgba(108,92,231,.08)',borderRadius:10,fontSize:13}}>
             {preview.length===0
               ? <span style={{color:'var(--red)'}}>⚠ No eligible residents match this selection</span>
               : <span style={{color:'var(--accent)',fontWeight:600}}>✓ Will send to {preview.length} resident{preview.length!==1?'s':''}</span>}
             {preview.length>0 && <div style={{marginTop:6,display:'flex',flexWrap:'wrap',gap:4}}>
-              {preview.slice(0,8).map(r=><span key={r.user_id} style={{fontSize:11,padding:'2px 8px',borderRadius:6,background:'var(--card)',border:'1px solid var(--border)'}}>{r.unit_number}</span>)}
+              {preview.slice(0,8).map(r=><span key={r.user_id} style={{fontSize:11,padding:'2px 8px',borderRadius:6,background:'var(--card)',border:'1px solid var(--border)'}}>{r.name} ({r.unit_number})</span>)}
               {preview.length>8 && <span style={{fontSize:11,color:'var(--text2)'}}>+{preview.length-8} more</span>}
             </div>}
           </div>}
