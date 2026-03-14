@@ -124,7 +124,7 @@ select.input{appearance:none;cursor:pointer}
 /* Home screen tiles */
 .home-header{padding:20px 20px 8px;display:flex;align-items:flex-start;justify-content:space-between}
 .home-greeting{font-size:14px;color:var(--text2);font-weight:400}
-.home-name{font-size:26px;font-weight:700;color:white;margin:2px 0 4px;letter-spacing:-0.5px}
+.home-name{font-size:26px;font-weight:700;color:white;margin:2px 0 0;letter-spacing:-0.5px}
 .home-loc{font-size:12px;color:var(--text2);display:flex;align-items:center;gap:4px;cursor:pointer}
 .home-loc svg{width:12px;height:12px}
 .home-topright{display:flex;align-items:center;gap:10px}
@@ -1268,13 +1268,15 @@ function HomePage({ctx, setPage}) {
   return <div style={{minHeight:'100vh',background:'#0a0a0f',paddingBottom:100}}>
     {/* Header */}
     <div className="home-header">
-      <div>
+      <div style={{flex:1,minWidth:0}}>
         <div className="home-greeting">{getGreeting()}</div>
-        <div className="home-name">{firstName}</div>
-        <div className="home-loc" onClick={()=>setPage('profile')}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
-          {aptLabel}
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>
+        <div style={{display:'flex',alignItems:'baseline',gap:10,flexWrap:'wrap'}}>
+          <div className="home-name">{firstName}</div>
+          <div className="home-loc" onClick={()=>setPage('profile')} style={{marginBottom:2}}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+            <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:160}}>{aptLabel}</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
         </div>
       </div>
       <div className="home-topright">
