@@ -1319,9 +1319,9 @@ function HomePage({ctx, setPage}) {
       </div>}
     </div>}
 
-    {/* Tiles grid */}
+    {/* Tiles grid — split into two rows with ad in between */}
     <div className="tiles-grid">
-      {tiles.map(t=>(
+      {tiles.slice(0,2).map(t=>(
         <div key={t.key} className="tile" style={{background:t.color}} onClick={()=>setPage(t.page)}>
           {t.illustration}
           <div className="tile-label">{t.label}</div>
@@ -1331,19 +1331,20 @@ function HomePage({ctx, setPage}) {
             <div className="tile-pending" style={{background:'rgba(225,112,85,0.85)'}}>{adminPending} pending</div>}
         </div>
       ))}
+    </div>
 
-      {/* Ad tile — full width, only if admin has set one up */}
-      {ad && <div style={{
-        gridColumn:'span 2', borderRadius:20, overflow:'hidden', position:'relative',
-        cursor: ad.cta_url?'pointer':'default',
+    {/* Ad tile — after first two navigation blocks */}
+    {ad && <div style={{padding:'0 20px 4px',cursor:ad.cta_url?'pointer':'default'}}
+      onClick={()=>ad.cta_url&&window.open(ad.cta_url,'_blank')}>
+      <div style={{
+        borderRadius:20, overflow:'hidden', position:'relative',
         background: ad.image_url
           ? `linear-gradient(90deg, ${ad.bg_color||'#1a1a2e'} 0%, rgba(0,0,0,0.1) 100%), url(${ad.image_url}) right center/cover no-repeat`
           : `linear-gradient(135deg, ${ad.bg_color||'#1a1a2e'}, #0a0a1a)`,
         minHeight:110, display:'flex', flexDirection:'column', justifyContent:'center',
         padding:'18px 20px', boxShadow:'0 2px 16px rgba(0,0,0,0.3)',
         border:'1px solid rgba(255,255,255,0.06)'
-      }} onClick={()=>ad.cta_url&&window.open(ad.cta_url,'_blank')}>
-        {/* Sponsored label */}
+      }}>
         <div style={{position:'absolute',top:10,right:12,fontSize:9,fontWeight:700,
             color:'rgba(255,255,255,0.4)',letterSpacing:1,textTransform:'uppercase'}}>
           SPONSORED
@@ -1357,7 +1358,20 @@ function HomePage({ctx, setPage}) {
             color:'white',border:'1px solid rgba(255,255,255,0.2)',alignSelf:'flex-start'}}>
           {ad.cta_text} <span style={{fontSize:14}}>→</span>
         </div>}
-      </div>}
+      </div>
+    </div>}
+
+    <div className="tiles-grid">
+      {tiles.slice(2).map(t=>(
+        <div key={t.key} className="tile" style={{background:t.color}} onClick={()=>setPage(t.page)}>
+          {t.illustration}
+          <div className="tile-label">{t.label}</div>
+          {t.key==='gate' && pendingCount>0 &&
+            <div className="tile-pending">{pendingCount} pending</div>}
+          {t.key==='admin' && adminPending>0 &&
+            <div className="tile-pending" style={{background:'rgba(225,112,85,0.85)'}}>{adminPending} pending</div>}
+        </div>
+      ))}
     </div>
   </div>;
 }
