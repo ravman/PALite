@@ -91,14 +91,14 @@ function App() {
   if(!token) return <LoginPage onLogin={handleLogin}/>;
 
   const isSuperAdmin = ctx?.roles?.some(r=>r.role==='super_admin');
-  const pages = {dashboard:<Dashboard/>,residents:<Residents/>,spaces:<Spaces/>,bookings:<Bookings/>,invoices:<InvoicesAdmin/>,approvals:<Approvals/>,daily_help:<DailyHelp/>,documents:<Documents/>,doc_reqs:<DocReqs/>,news:<NewsAdmin/>,banners:<BannersAdmin/>,ads:<AdsAdmin/>,guards:<Guards/>,societies:<Societies token={token}/>};
+  const pages = {dashboard:<Dashboard/>,apartments:<Apartments/>,residents:<Residents/>,spaces:<Spaces/>,bookings:<Bookings/>,invoices:<InvoicesAdmin/>,approvals:<Approvals/>,daily_help:<DailyHelp/>,documents:<Documents/>,doc_reqs:<DocReqs/>,news:<NewsAdmin/>,banners:<BannersAdmin/>,ads:<AdsAdmin/>,guards:<Guards/>,societies:<Societies token={token}/>};
 
   return <div className="layout">
     <div className="sidebar">
       <h1 style={{padding:'16px 20px 16px'}}>Admin Console</h1>
       <div className="society-name"><span>{ctx?.society?.name||'No Society'}</span>{ctx?.society?.city}</div>
       <nav>
-        {[['dashboard','Dashboard'],['residents','Residents'],['spaces','Spaces'],['bookings','Bookings'],['invoices','💳 Invoices'],['approvals','Approvals'],['daily_help','Daily Help'],['documents','Documents'],['doc_reqs','Doc Requirements'],['news','📰 News'],['banners','📢 Banners'],['ads','🏷 Ads'],['guards','🛡 Guards']].map(([k,l])=>
+        {[['dashboard','Dashboard'],['apartments','🏢 Apartments'],['residents','Residents'],['spaces','Spaces'],['bookings','Bookings'],['invoices','💳 Invoices'],['approvals','Approvals'],['daily_help','Daily Help'],['documents','Documents'],['doc_reqs','Doc Requirements'],['news','📰 News'],['banners','📢 Banners'],['ads','🏷 Ads'],['guards','🛡 Guards']].map(([k,l])=>
           <button key={k} className={page===k?'active':''} onClick={()=>setPage(k)}>{l}</button>
         )}
         {isSuperAdmin&&<button className={page==='societies'?'active':''} onClick={()=>setPage('societies')} style={{borderTop:'1px solid #2d2d3d',marginTop:8,paddingTop:16}}>⚙ Manage Societies</button>}
@@ -123,6 +123,200 @@ function LoginPage({onLogin}) {
       :<><div className="form-group"><label className="label">OTP</label><input className="input" value={otp} onChange={e=>setOtp(e.target.value)} placeholder="123456"/></div>
         <button className="btn btn-primary" style={{width:'100%'}} onClick={verify}>Verify</button></>}
     </div>
+  </div>;
+}
+
+function Apartments() {
+  const [towers, setTowers]       = useState([]);
+  const [apartments, setApartments] = useState([]);
+  const [selectedTower, setSelectedTower] = useState('all');
+  const [residents, setResidents] = useState([]); // for drawer
+  const [drawer, setDrawer]       = useState(null); // apartment object
+  const [modal, setModal]         = useState(null); // 'create' | apt object for edit
+  const [form, setForm]           = useState({towerId:'', unitNumber:'', floor:'', bedrooms:'2', areaSqft:''});
+  const [msg, setMsg]             = useState('');
+  const [loadingResidents, setLoadingResidents] = useState(false);
+
+  const load = () => {
+    api('/api/admin/towers').then(d => { setTowers(Array.isArray(d)?d:[]); });
+    api('/api/admin/apartments').then(d => setApartments(Array.isArray(d)?d:[]));
+  };
+  useEffect(load, []);
+
+  const setF = (k,v) => setForm(f=>({...f,[k]:v}));
+
+  const openCreate = () => {
+    setForm({towerId: towers[0]?.id||'', unitNumber:'', floor:'', bedrooms:'2', areaSqft:''});
+    setMsg(''); setModal('create');
+  };
+
+  const openEdit = apt => {
+    setForm({towerId:apt.tower_id, unitNumber:apt.unit_number, floor:apt.floor||'', bedrooms:apt.bedrooms||'2', areaSqft:apt.area_sqft||''});
+    setMsg(''); setModal(apt);
+  };
+
+  const openResidents = apt => {
+    setDrawer(apt); setResidents([]); setLoadingResidents(true);
+    api(`/api/admin/apartments/${apt.id}/residents`).then(d => { setResidents(Array.isArray(d)?d:[]); setLoadingResidents(false); });
+  };
+
+  const save = () => {
+    if(!form.unitNumber.trim()) return setMsg('Unit number is required');
+    if(!form.towerId) return setMsg('Select a tower');
+    const body = {towerId:form.towerId, unitNumber:form.unitNumber.trim(), floor:form.floor?parseInt(form.floor):null, bedrooms:parseInt(form.bedrooms)||2, areaSqft:form.areaSqft?parseFloat(form.areaSqft):null};
+    const isEdit = modal && modal !== 'create';
+    const req = isEdit
+      ? api(`/api/admin/apartments/${modal.id}`, {method:'PUT', body:JSON.stringify(body)})
+      : api('/api/admin/apartments', {method:'POST', body:JSON.stringify(body)});
+    req.then(d => {
+      if(d.error) return setMsg(d.error);
+      setModal(null); load();
+    });
+  };
+
+  const del = apt => {
+    if(!confirm(`Delete apartment ${apt.unit_number}? This cannot be undone.`)) return;
+    api(`/api/admin/apartments/${apt.id}`, {method:'DELETE'}).then(d => {
+      if(d.error) return alert(d.error);
+      load();
+    });
+  };
+
+  const filtered = selectedTower==='all' ? apartments : apartments.filter(a=>a.tower_id===selectedTower);
+
+  const statusColor = s => s==='approved'?'var(--green)':s==='pending'?'var(--orange)':'var(--red)';
+
+  // Group apartments by tower for display
+  const byTower = filtered.reduce((acc, a) => {
+    const key = a.tower_name||'Unknown';
+    if(!acc[key]) acc[key] = [];
+    acc[key].push(a); return acc;
+  }, {});
+
+  return <div>
+    <div className="top-bar" style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:12}}>
+      <div>
+        <h2 style={{marginBottom:4}}>Apartments</h2>
+        <div style={{fontSize:13,color:'var(--text2)'}}>{apartments.length} units across {towers.length} tower{towers.length!==1?'s':''}</div>
+      </div>
+      <button className="btn btn-primary btn-sm" onClick={openCreate}>+ Add Apartment</button>
+    </div>
+
+    {/* Tower filter */}
+    <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:20}}>
+      <button onClick={()=>setSelectedTower('all')} style={{padding:'6px 16px',borderRadius:20,border:'1px solid var(--border)',background:selectedTower==='all'?'var(--accent)':'none',color:selectedTower==='all'?'white':'var(--text2)',cursor:'pointer',fontSize:13,fontWeight:600,fontFamily:'inherit'}}>
+        All Towers
+      </button>
+      {towers.map(t=><button key={t.id} onClick={()=>setSelectedTower(t.id)} style={{padding:'6px 16px',borderRadius:20,border:'1px solid var(--border)',background:selectedTower===t.id?'var(--accent)':'none',color:selectedTower===t.id?'white':'var(--text2)',cursor:'pointer',fontSize:13,fontWeight:600,fontFamily:'inherit'}}>
+        {t.name}
+      </button>)}
+    </div>
+
+    {/* Apartments grouped by tower */}
+    {Object.entries(byTower).map(([towerName, apts])=><div key={towerName} style={{marginBottom:28}}>
+      <div style={{fontSize:12,fontWeight:700,color:'var(--text2)',textTransform:'uppercase',letterSpacing:1,marginBottom:10}}>{towerName}</div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(240px,1fr))',gap:10}}>
+        {apts.map(apt=>{
+          const resCount = apt.resident_count || 0;
+          return <div key={apt.id} style={{background:'var(--card)',border:'1px solid var(--border)',borderRadius:14,padding:16}}>
+            <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:10}}>
+              <div>
+                <div style={{fontSize:16,fontWeight:700,color:'var(--text)'}}>{apt.unit_number}</div>
+                <div style={{fontSize:12,color:'var(--text2)',marginTop:2}}>Floor {apt.floor||'—'} · {apt.bedrooms||2} BHK{apt.area_sqft?` · ${apt.area_sqft} sqft`:''}</div>
+              </div>
+              <div style={{display:'flex',gap:6}}>
+                <button onClick={()=>openEdit(apt)} style={{width:28,height:28,borderRadius:8,border:'1px solid var(--border)',background:'none',cursor:'pointer',color:'var(--text2)',fontSize:13,display:'flex',alignItems:'center',justifyContent:'center'}} title="Edit">✏</button>
+                <button onClick={()=>del(apt)} style={{width:28,height:28,borderRadius:8,border:'none',background:'rgba(248,81,73,.12)',cursor:'pointer',color:'var(--red)',fontSize:13,display:'flex',alignItems:'center',justifyContent:'center'}} title="Delete">🗑</button>
+              </div>
+            </div>
+            <button onClick={()=>openResidents(apt)} style={{width:'100%',padding:'7px 0',borderRadius:8,border:'1px solid var(--border)',background:'var(--card2)',cursor:'pointer',fontSize:12,fontWeight:600,color:'var(--text2)',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:6}}>
+              👤 View Residents
+            </button>
+          </div>;
+        })}
+      </div>
+    </div>)}
+
+    {filtered.length===0 && <div className="empty">No apartments found. Add your first unit above.</div>}
+
+    {/* Create / Edit Modal */}
+    {modal && <div className="modal-overlay" onClick={()=>setModal(null)}>
+      <div className="modal" onClick={e=>e.stopPropagation()} style={{maxWidth:440}}>
+        <div className="modal-header">
+          <span className="modal-title">{modal==='create'?'Add Apartment':'Edit Apartment'}</span>
+          <button className="modal-close" onClick={()=>setModal(null)}>✕</button>
+        </div>
+        <div style={{padding:24}}>
+          <div className="form-group">
+            <label className="label">Tower *</label>
+            <select className="input" value={form.towerId} onChange={e=>setF('towerId',e.target.value)}>
+              <option value="">Select tower</option>
+              {towers.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+          </div>
+          <div className="form-group">
+            <label className="label">Unit Number *</label>
+            <input className="input" value={form.unitNumber} onChange={e=>setF('unitNumber',e.target.value)} placeholder="e.g. 101, A-202"/>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+            <div className="form-group">
+              <label className="label">Floor</label>
+              <input className="input" type="number" value={form.floor} onChange={e=>setF('floor',e.target.value)} placeholder="1"/>
+            </div>
+            <div className="form-group">
+              <label className="label">Bedrooms</label>
+              <select className="input" value={form.bedrooms} onChange={e=>setF('bedrooms',e.target.value)}>
+                {[1,2,3,4,5].map(n=><option key={n} value={n}>{n} BHK</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="label">Area (sqft)</label>
+            <input className="input" type="number" value={form.areaSqft} onChange={e=>setF('areaSqft',e.target.value)} placeholder="e.g. 1200"/>
+          </div>
+          {msg && <div style={{color:'var(--red)',fontSize:13,marginBottom:12}}>{msg}</div>}
+          <div style={{display:'flex',gap:10}}>
+            <button className="btn" style={{flex:1}} onClick={()=>setModal(null)}>Cancel</button>
+            <button className="btn btn-primary" style={{flex:1}} onClick={save}>
+              {modal==='create'?'Add Apartment':'Save Changes'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>}
+
+    {/* Residents Drawer */}
+    {drawer && <div className="modal-overlay" onClick={()=>setDrawer(null)}>
+      <div className="modal" onClick={e=>e.stopPropagation()} style={{maxWidth:520}}>
+        <div className="modal-header">
+          <div>
+            <span className="modal-title">Residents — {drawer.unit_number}</span>
+            <div style={{fontSize:12,color:'var(--text2)',marginTop:2}}>{drawer.tower_name} · Floor {drawer.floor||'—'} · {drawer.bedrooms||2} BHK</div>
+          </div>
+          <button className="modal-close" onClick={()=>setDrawer(null)}>✕</button>
+        </div>
+        <div style={{padding:24}}>
+          {loadingResidents && <div style={{textAlign:'center',color:'var(--text2)',padding:40}}>Loading…</div>}
+          {!loadingResidents && residents.length===0 && <div style={{textAlign:'center',color:'var(--text2)',padding:40}}>
+            <div style={{fontSize:32,marginBottom:8}}>🏠</div>
+            No residents in this apartment
+          </div>}
+          {residents.map(r=><div key={r.id} style={{display:'flex',alignItems:'center',gap:12,padding:'12px 0',borderBottom:'1px solid var(--border)'}}>
+            <div style={{width:40,height:40,borderRadius:'50%',background:'var(--accent)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:15,fontWeight:700,color:'white',flexShrink:0}}>
+              {(r.name||'?')[0].toUpperCase()}
+            </div>
+            <div style={{flex:1}}>
+              <div style={{fontWeight:600,fontSize:14,color:'var(--text)'}}>{r.name}</div>
+              <div style={{fontSize:12,color:'var(--text2)',marginTop:2}}>{r.phone}{r.email?` · ${r.email}`:''}</div>
+              <div style={{fontSize:11,color:'var(--text2)',marginTop:2,textTransform:'capitalize'}}>{r.resident_type.replace('_',' ')}{r.lease_start?` · ${r.lease_start} → ${r.lease_end||'ongoing'}`:''}</div>
+            </div>
+            <span style={{fontSize:11,fontWeight:700,padding:'3px 10px',borderRadius:20,color:statusColor(r.status),border:`1px solid ${statusColor(r.status)}`,background:`${statusColor(r.status)}18`}}>
+              {r.status}
+            </span>
+          </div>)}
+        </div>
+      </div>
+    </div>}
   </div>;
 }
 

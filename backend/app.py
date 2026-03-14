@@ -541,7 +541,59 @@ def admin_towers(): return jsonify(drs(get_db().execute('SELECT * FROM towers WH
 def admin_apartments():
     tid = request.args.get('towerId'); db = get_db()
     if tid: return jsonify(drs(db.execute('SELECT a.*, t.name as tower_name FROM apartments a JOIN towers t ON a.tower_id=t.id WHERE a.tower_id=? AND t.society_id=?',(tid,g.soc)).fetchall()))
-    return jsonify(drs(db.execute('SELECT a.*, t.name as tower_name FROM apartments a JOIN towers t ON a.tower_id=t.id WHERE t.society_id=?',(g.soc,)).fetchall()))
+    return jsonify(drs(db.execute('SELECT a.*, t.name as tower_name FROM apartments a JOIN towers t ON a.tower_id=t.id WHERE t.society_id=? ORDER BY t.name, a.floor, a.unit_number',(g.soc,)).fetchall()))
+
+@app.route('/api/admin/apartments', methods=['POST'])
+@admin_required
+def admin_create_apartment():
+    d = request.json; db = get_db()
+    if not d.get('towerId') or not d.get('unitNumber'): return jsonify({'error': 'towerId and unitNumber required'}), 400
+    # Verify tower belongs to this society
+    tower = dr(db.execute('SELECT * FROM towers WHERE id=? AND society_id=?', (d['towerId'], g.soc)).fetchone())
+    if not tower: return jsonify({'error': 'Tower not found'}), 404
+    aid = uid('apt-')
+    db.execute('INSERT INTO apartments(id,tower_id,unit_number,floor,bedrooms,area_sqft) VALUES(?,?,?,?,?,?)',
+               (aid, d['towerId'], d['unitNumber'], d.get('floor'), d.get('bedrooms', 2), d.get('areaSqft')))
+    db.commit()
+    return jsonify({'success': True, 'id': aid})
+
+@app.route('/api/admin/apartments/<aid>', methods=['PUT'])
+@admin_required
+def admin_update_apartment(aid):
+    d = request.json; db = get_db()
+    apt = dr(db.execute('SELECT a.* FROM apartments a JOIN towers t ON a.tower_id=t.id WHERE a.id=? AND t.society_id=?', (aid, g.soc)).fetchone())
+    if not apt: return jsonify({'error': 'Not found'}), 404
+    db.execute('UPDATE apartments SET unit_number=?, floor=?, bedrooms=?, area_sqft=? WHERE id=?',
+               (d.get('unitNumber', apt['unit_number']), d.get('floor', apt['floor']),
+                d.get('bedrooms', apt['bedrooms']), d.get('areaSqft', apt['area_sqft']), aid))
+    db.commit()
+    return jsonify({'success': True})
+
+@app.route('/api/admin/apartments/<aid>', methods=['DELETE'])
+@admin_required
+def admin_delete_apartment(aid):
+    db = get_db()
+    apt = dr(db.execute('SELECT a.* FROM apartments a JOIN towers t ON a.tower_id=t.id WHERE a.id=? AND t.society_id=?', (aid, g.soc)).fetchone())
+    if not apt: return jsonify({'error': 'Not found'}), 404
+    if dr(db.execute('SELECT id FROM residents WHERE apartment_id=? AND status="approved"', (aid,)).fetchone()):
+        return jsonify({'error': 'Cannot delete apartment with active residents'}), 400
+    db.execute('DELETE FROM apartments WHERE id=?', (aid,))
+    db.commit()
+    return jsonify({'success': True})
+
+@app.route('/api/admin/apartments/<aid>/residents')
+@admin_required
+def admin_apartment_residents(aid):
+    db = get_db()
+    # Verify apartment belongs to this society
+    apt = dr(db.execute('SELECT a.* FROM apartments a JOIN towers t ON a.tower_id=t.id WHERE a.id=? AND t.society_id=?', (aid, g.soc)).fetchone())
+    if not apt: return jsonify({'error': 'Not found'}), 404
+    rows = drs(db.execute(
+        'SELECT r.*, u.name, u.phone, u.email FROM residents r JOIN users u ON r.user_id=u.id WHERE r.apartment_id=? ORDER BY r.status, r.created_at DESC',
+        (aid,)).fetchall())
+    return jsonify(rows)
+
+
 
 @app.route('/api/admin/residents')
 @admin_required
