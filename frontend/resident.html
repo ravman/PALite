@@ -2068,25 +2068,14 @@ function BookingsPage({setPage, prefill}) {
 }
 
 function VisitorsPage({ctx,setPage,prefill}) {
-  const [tab, setTab]         = useState('expected');
+  const [tab, setTab]         = useState('awaiting');
   const [entries, setEntries] = useState([]);
-  const [invites, setInvites] = useState([]);
+  const [counts, setCounts]   = useState({awaiting:0, inside:0, left:0});
   const [modal, setModal]     = useState(false);
   const [invitePrefill, setInvitePrefill] = useState({});
   const [qrInvite, setQrInvite]           = useState(null);
-  const [selectedDate, setSelectedDate]   = useState(new Date().toISOString().split('T')[0]);
   const [expanded, setExpanded]           = useState(null);
   const [submitting, setSubmitting]       = useState(null);
-
-  // Build date strip: today + next 6 days
-  const dateStrip = (() => {
-    const days = [];
-    for(let i=0; i<7; i++) {
-      const d = new Date(); d.setDate(d.getDate()+i);
-      days.push({ label: i===0 ? 'Today' : String(d.getDate()), value: d.toISOString().split('T')[0] });
-    }
-    return days;
-  })();
 
   useEffect(()=>{
     if(!prefill) return;
@@ -2099,22 +2088,26 @@ function VisitorsPage({ctx,setPage,prefill}) {
   },[prefill]);
 
   const loadEntries = () => {
-    if(tab==='expected') {
-      api('/api/visitors/my-invitations').then(d=>setInvites(Array.isArray(d)?d:[]));
-      api(`/api/visitors/my-entries?tab=expected&date=${selectedDate}`).then(d=>setEntries(Array.isArray(d)?d:[]));
-    } else {
-      api(`/api/visitors/my-entries?tab=${tab}`).then(d=>setEntries(Array.isArray(d)?d:[]));
-    }
+    api(`/api/visitors/my-entries?tab=${tab}`).then(d=>setEntries(Array.isArray(d)?d:[]));
+    // Refresh counts for all tabs
+    Promise.all([
+      api('/api/visitors/my-entries?tab=awaiting'),
+      api('/api/visitors/my-entries?tab=inside'),
+      api('/api/visitors/my-entries?tab=left'),
+    ]).then(([a,i,l])=>setCounts({
+      awaiting: Array.isArray(a)?a.length:0,
+      inside:   Array.isArray(i)?i.length:0,
+      left:     Array.isArray(l)?l.length:0,
+    }));
   };
-  useEffect(()=>{ loadEntries(); }, [tab, selectedDate]);
+  useEffect(()=>{ loadEntries(); }, [tab]);
 
-  const createInvite = d=>{api('/api/visitors/create-invite',{method:'POST',body:JSON.stringify(d)}).then(r=>{
-    api('/api/visitors/my-invitations').then(fresh=>{
-      setInvites(fresh);
-      if(r.id){ const created=fresh.find(i=>i.id===r.id); if(created) setQrInvite(created); }
+  const createInvite = d=>{
+    api('/api/visitors/create-invite',{method:'POST',body:JSON.stringify(d)}).then(r=>{
+      if(r.id) api('/api/visitors/my-invitations').then(fresh=>{ const created=fresh.find(i=>i.id===r.id); if(created) setQrInvite(created); });
+      setModal(false);
     });
-    setModal(false);
-  });};
+  };
 
   const actOn = (id, action) => {
     setSubmitting(id);
@@ -2122,35 +2115,20 @@ function VisitorsPage({ctx,setPage,prefill}) {
   };
 
   const fmtTime = ts => { if(!ts) return ''; const d=new Date(ts); return d.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:true}); };
+  const fmtDate = ts => { if(!ts) return ''; const d=new Date(ts); return d.toLocaleDateString('en-IN',{day:'numeric',month:'short'}); };
   const typeColor = t => ({guest:'#8B9FD4',cab:'#5BA3C9',delivery:'#E8A87C',daily_help:'#7EC8A4',other:'#9B8EC4'})[t]||'#8B9FD4';
   const typeLabel = t => t ? t.replace('_',' ').replace(/\b\w/g,c=>c.toUpperCase()) : 'Guest';
-  const statusStyle = s => {
-    if(s==='Approved'||s==='Inside'||s==='Active') return {color:'#3CB371',border:'1px solid #3CB371',background:'rgba(60,179,113,.1)'};
-    if(s==='Waiting') return {color:'#E8A020',border:'1px solid #E8A020',background:'rgba(232,160,32,.1)'};
-    if(s==='Denied'||s==='Expired') return {color:'#E05555',border:'1px solid #E05555',background:'rgba(224,85,85,.1)'};
-    return {color:'var(--text2)',border:'1px solid var(--border)',background:'var(--card2)'};
-  };
   const avatarColor = name => {
     const colors=['#5BA3C9','#8B9FD4','#7EC8A4','#E8A87C','#C9A0DC'];
     let h=0; for(const c of (name||'')) h=(h*31+c.charCodeAt(0))&0xffff;
     return colors[h%colors.length];
   };
 
-  // Unified card list
-  const cards = tab==='expected' ? [
-    ...invites.filter(inv=>{
-      const d=selectedDate, from=inv.valid_from?inv.valid_from.split('T')[0]:null, to=inv.valid_to?inv.valid_to.split('T')[0]:null;
-      if(from&&to) return d>=from&&d<=to; if(from) return d>=from;
-      return inv.created_at?.split('T')[0]===d||!from;
-    }).map(inv=>({_type:'invite',id:inv.id,name:inv.visitor_name,visitorType:inv.visitor_type,
-      status:inv.status==='active'?'Active':inv.status==='used'?'Inside':'Expired',statusKey:inv.status,
-      time:inv.valid_from,unit:ctx?.apartment?.unit_number,residentName:ctx?.user?.name,qr:inv})),
-    ...entries.map(e=>({_type:'entry',id:e.id,name:e.visitor_name,visitorType:e.visitor_type,
-      status:e.approval_status==='approved'?'Approved':e.approval_status==='pending'?'Waiting':e.approval_status==='rejected'?'Denied':e.approval_status,
-      statusKey:e.approval_status,time:e.entry_time||e.created_at,unit:ctx?.apartment?.unit_number,residentName:ctx?.user?.name})),
-  ] : entries.map(e=>({_type:'entry',id:e.id,name:e.visitor_name,visitorType:e.visitor_type,
-    status:e.exit_time?'Exited':e.approval_status==='approved'?'Inside':e.approval_status==='rejected'?'Denied':e.approval_status,
-    statusKey:e.approval_status,time:e.entry_time||e.created_at,unit:ctx?.apartment?.unit_number,residentName:ctx?.user?.name}));
+  const TABS = [
+    {key:'awaiting', label:'Awaiting', emptyIcon:'⏳', emptyText:'No visitors awaiting approval'},
+    {key:'inside',   label:'Inside',   emptyIcon:'🏠', emptyText:'No visitors currently inside'},
+    {key:'left',     label:'Left',     emptyIcon:'👋', emptyText:'No visitor history yet'},
+  ];
 
   return <div style={{background:'var(--bg)',minHeight:'100vh'}}>
     {/* Header */}
@@ -2163,54 +2141,73 @@ function VisitorsPage({ctx,setPage,prefill}) {
     </div>
 
     {/* Tab bar */}
-    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',margin:'0 16px 12px',background:'var(--card2)',borderRadius:14,padding:3}}>
-      {['expected','inside','history'].map(t=><button key={t} onClick={()=>setTab(t)} style={{
-        padding:'9px 0',borderRadius:11,border:'none',cursor:'pointer',fontSize:13,fontWeight:600,fontFamily:'inherit',
-        background:tab===t?'var(--accent)':'none',color:tab===t?'white':'var(--text2)',transition:'all .2s',
-      }}>{t.charAt(0).toUpperCase()+t.slice(1)}</button>)}
+    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',margin:'0 16px 16px',background:'var(--card2)',borderRadius:14,padding:3}}>
+      {TABS.map(t=><button key={t.key} onClick={()=>setTab(t.key)} style={{
+        padding:'9px 4px',borderRadius:11,border:'none',cursor:'pointer',fontSize:13,fontWeight:600,fontFamily:'inherit',
+        background:tab===t.key?'var(--accent)':'none',color:tab===t.key?'white':'var(--text2)',transition:'all .2s',
+        position:'relative',
+      }}>
+        {t.label}
+        {counts[t.key]>0 && <span style={{
+          position:'absolute',top:4,right:8,minWidth:16,height:16,borderRadius:8,
+          background:tab===t.key?'rgba(255,255,255,0.3)':'var(--accent)',
+          color:'white',fontSize:10,fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center',padding:'0 4px',
+        }}>{counts[t.key]}</span>}
+      </button>)}
     </div>
-
-    {/* Date strip — Expected only */}
-    {tab==='expected' && <div style={{display:'flex',alignItems:'center',gap:8,padding:'0 16px 14px',overflowX:'auto'}}>
-      <span style={{fontSize:16,color:'var(--text2)',flexShrink:0}}>↺</span>
-      {dateStrip.map(d=><button key={d.value} onClick={()=>setSelectedDate(d.value)} style={{
-        flexShrink:0,padding:'7px 14px',borderRadius:20,border:'none',cursor:'pointer',fontFamily:'inherit',fontSize:13,fontWeight:600,
-        background:selectedDate===d.value?'var(--accent)':'var(--card2)',color:selectedDate===d.value?'white':'var(--text)',transition:'all .2s',
-      }}>{d.label}</button>)}
-      <button style={{flexShrink:0,width:30,height:30,borderRadius:'50%',background:'var(--card2)',border:'none',cursor:'pointer',color:'var(--text2)',fontSize:14}}>▾</button>
-    </div>}
 
     {/* Cards */}
     <div style={{padding:'0 16px 100px'}}>
-      {cards.length===0 && <div style={{textAlign:'center',padding:'60px 0',color:'var(--text2)'}}>
-        <div style={{fontSize:40,marginBottom:12}}>👥</div>
-        <div style={{fontSize:14}}>{tab==='expected'?'No visitors expected':'No entries found'}</div>
+      {entries.length===0 && <div style={{textAlign:'center',padding:'60px 0',color:'var(--text2)'}}>
+        <div style={{fontSize:40,marginBottom:12}}>{TABS.find(t=>t.key===tab)?.emptyIcon}</div>
+        <div style={{fontSize:14}}>{TABS.find(t=>t.key===tab)?.emptyText}</div>
       </div>}
-      {cards.map((card,i)=>{
-        const initials=(card.name||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
-        const isWaiting=card.statusKey==='pending';
-        const isExpanded=expanded===card.id;
-        return <div key={card.id||i} style={{background:'var(--card2)',borderRadius:16,marginBottom:10,overflow:'hidden',border:'1px solid var(--border)'}}>
-          <div style={{display:'flex',alignItems:'center',gap:12,padding:'14px 16px',cursor:isWaiting||card._type==='invite'?'pointer':'default'}}
-            onClick={()=>{ if(isWaiting) setExpanded(isExpanded?null:card.id); if(card._type==='invite'&&card.statusKey==='active') setQrInvite(card.qr); }}>
-            <div style={{width:46,height:46,borderRadius:'50%',background:avatarColor(card.name),display:'flex',alignItems:'center',justifyContent:'center',fontSize:15,fontWeight:700,color:'white',flexShrink:0}}>{initials}</div>
+
+      {entries.map(e=>{
+        const initials=(e.visitor_name||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+        const isAwaiting = e.approval_status==='pending';
+        const isExpanded = expanded===e.id;
+
+        // Status label and style per tab
+        const statusLabel = tab==='awaiting'?'Waiting'
+          : tab==='inside'?'Inside'
+          : e.exit_time?'Left':'Denied';
+        const statusStyle = tab==='awaiting'
+          ? {color:'#E8A020',border:'1px solid #E8A020',background:'rgba(232,160,32,.1)'}
+          : tab==='inside'
+          ? {color:'#3CB371',border:'1px solid #3CB371',background:'rgba(60,179,113,.1)'}
+          : e.exit_time
+          ? {color:'var(--text2)',border:'1px solid var(--border)',background:'var(--card2)'}
+          : {color:'#E05555',border:'1px solid #E05555',background:'rgba(224,85,85,.1)'};
+
+        // Relevant time to show
+        const timeLabel = tab==='inside' ? fmtTime(e.entry_time)
+          : tab==='left' ? (e.exit_time ? `Out ${fmtTime(e.exit_time)}` : `In ${fmtTime(e.entry_time)}`)
+          : fmtTime(e.created_at);
+
+        return <div key={e.id} style={{background:'var(--card2)',borderRadius:16,marginBottom:10,overflow:'hidden',border:'1px solid var(--border)'}}>
+          <div style={{display:'flex',alignItems:'center',gap:12,padding:'14px 16px',cursor:isAwaiting?'pointer':'default'}}
+            onClick={()=>{ if(isAwaiting) setExpanded(isExpanded?null:e.id); }}>
+            <div style={{width:46,height:46,borderRadius:'50%',background:avatarColor(e.visitor_name),display:'flex',alignItems:'center',justifyContent:'center',fontSize:15,fontWeight:700,color:'white',flexShrink:0}}>{initials}</div>
             <div style={{flex:1,minWidth:0}}>
-              <div style={{fontWeight:700,fontSize:15,color:'var(--text)',marginBottom:2}}>{card.name}</div>
-              <div style={{fontSize:12,color:'var(--text2)',marginBottom:5}}>For {card.unit||'—'} · {card.residentName||''}</div>
+              <div style={{fontWeight:700,fontSize:15,color:'var(--text)',marginBottom:2}}>{e.visitor_name}</div>
+              <div style={{fontSize:12,color:'var(--text2)',marginBottom:5}}>{e.visitor_phone||''}</div>
               <div style={{display:'flex',gap:5,flexWrap:'wrap'}}>
-                {(card.visitorType||'guest').split(',').map(t=><span key={t} style={{fontSize:11,fontWeight:700,padding:'2px 9px',borderRadius:20,background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.12)',color:typeColor(t.trim())}}>{typeLabel(t.trim())}</span>)}
+                {(e.visitor_type||'guest').split(',').map(t=><span key={t} style={{fontSize:11,fontWeight:700,padding:'2px 9px',borderRadius:20,background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.12)',color:typeColor(t.trim())}}>{typeLabel(t.trim())}</span>)}
               </div>
             </div>
             <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:5,flexShrink:0}}>
-              <span style={{fontSize:11,fontWeight:700,padding:'3px 10px',borderRadius:20,...statusStyle(card.status)}}>{card.status}</span>
-              {card.time && <div style={{display:'flex',alignItems:'center',gap:4,fontSize:11,color:'var(--text2)'}}>⏱ {fmtTime(card.time)}</div>}
+              <span style={{fontSize:11,fontWeight:700,padding:'3px 10px',borderRadius:20,...statusStyle}}>{statusLabel}</span>
+              {timeLabel && <div style={{fontSize:11,color:'var(--text2)'}}>⏱ {timeLabel}</div>}
             </div>
           </div>
-          {isWaiting && isExpanded && <div style={{display:'flex',justifyContent:'flex-end',gap:10,padding:'0 16px 14px'}}>
-            <button onClick={()=>actOn(card.id,'reject')} disabled={submitting===card.id}
+
+          {/* Awaiting: tap to expand Deny/Approve */}
+          {isAwaiting && isExpanded && <div style={{display:'flex',justifyContent:'flex-end',gap:10,padding:'0 16px 14px'}}>
+            <button onClick={()=>actOn(e.id,'reject')} disabled={submitting===e.id}
               style={{padding:'8px 20px',borderRadius:20,border:'1px solid rgba(255,255,255,.2)',background:'rgba(255,255,255,0.08)',color:'var(--text)',fontWeight:600,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}>Deny</button>
-            <button onClick={()=>actOn(card.id,'approve')} disabled={submitting===card.id}
-              style={{padding:'8px 24px',borderRadius:20,border:'none',background:'var(--accent)',color:'white',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}>{submitting===card.id?'…':'Approve'}</button>
+            <button onClick={()=>actOn(e.id,'approve')} disabled={submitting===e.id}
+              style={{padding:'8px 24px',borderRadius:20,border:'none',background:'var(--accent)',color:'white',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}>{submitting===e.id?'…':'Approve'}</button>
           </div>}
         </div>;
       })}

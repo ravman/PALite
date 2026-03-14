@@ -340,32 +340,28 @@ def my_invitations():
 def my_entries():
     db = get_db()
     if not g.apt: return jsonify([])
-    date = request.args.get('date', '')
-    tab  = request.args.get('tab', 'expected')  # expected | inside | history
-    if tab == 'inside':
-        # Currently checked in (entry_time set, exit_time null, approved)
-        rows = drs(db.execute(
-            "SELECT ve.*, u.name as resident_name FROM visitor_entries ve "
-            "LEFT JOIN users u ON u.id=(SELECT user_id FROM residents WHERE apartment_id=ve.apartment_id LIMIT 1) "
-            "WHERE ve.apartment_id=? AND ve.exit_time IS NULL AND ve.approval_status='approved' "
-            "ORDER BY ve.entry_time DESC", (g.apt,)).fetchall())
-    elif tab == 'history':
+    tab = request.args.get('tab', 'awaiting')  # awaiting | inside | left
+
+    if tab == 'awaiting':
+        # Pending approval from guard — not yet approved or rejected
         rows = drs(db.execute(
             "SELECT ve.* FROM visitor_entries ve "
-            "WHERE ve.apartment_id=? AND (ve.exit_time IS NOT NULL OR ve.approval_status IN ('rejected')) "
+            "WHERE ve.apartment_id=? AND ve.approval_status='pending' "
+            "ORDER BY ve.created_at DESC", (g.apt,)).fetchall())
+    elif tab == 'inside':
+        # Approved and still inside (no exit_time)
+        rows = drs(db.execute(
+            "SELECT ve.* FROM visitor_entries ve "
+            "WHERE ve.apartment_id=? AND ve.approval_status='approved' AND ve.exit_time IS NULL "
+            "ORDER BY ve.entry_time DESC", (g.apt,)).fetchall())
+    elif tab == 'left':
+        # Exited (exit_time set) or rejected
+        rows = drs(db.execute(
+            "SELECT ve.* FROM visitor_entries ve "
+            "WHERE ve.apartment_id=? AND (ve.exit_time IS NOT NULL OR ve.approval_status='rejected') "
             "ORDER BY ve.created_at DESC LIMIT 50", (g.apt,)).fetchall())
     else:
-        # Expected: all entries for apartment on a date, or invitations valid for date
-        if date:
-            rows = drs(db.execute(
-                "SELECT ve.* FROM visitor_entries ve "
-                "WHERE ve.apartment_id=? AND date(ve.created_at)=? "
-                "ORDER BY ve.created_at DESC", (g.apt, date)).fetchall())
-        else:
-            rows = drs(db.execute(
-                "SELECT ve.* FROM visitor_entries ve "
-                "WHERE ve.apartment_id=? AND date(ve.created_at)=date('now','localtime') "
-                "ORDER BY ve.created_at DESC", (g.apt,)).fetchall())
+        rows = []
     return jsonify(rows)
 
 @app.route('/api/visitors/pending-approvals')

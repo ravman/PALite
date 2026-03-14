@@ -433,7 +433,8 @@ function LogPage() {
         <div style={{fontSize:12,color:'var(--text2)'}}>{e.unit_number} - {e.tower_name}</div></div>
         <div style={{textAlign:'right'}}><span className={`badge badge-${e.approval_status==='approved'?'green':e.approval_status==='pending'?'orange':'red'}`}>{e.approval_status}</span>
           <div style={{fontSize:11,color:'var(--text2)',marginTop:4}}>{e.entry_time?.split('T')[1]?.slice(0,5)||''}</div>
-          {e.approval_status==='approved'&&!e.exit_time&&<button className="btn-sm" style={{marginTop:4,background:'var(--orange)',color:'white',border:'none',borderRadius:6,cursor:'pointer',fontSize:10,padding:'4px 8px',fontFamily:'inherit'}} onClick={()=>markExit(e.id)}>Mark Exit</button>}
+          {e.approval_status==='approved'&&!e.exit_time&&<button style={{marginTop:6,background:'var(--orange)',color:'white',border:'none',borderRadius:8,cursor:'pointer',fontSize:12,padding:'6px 12px',fontFamily:'inherit',fontWeight:700,width:'100%'}} onClick={()=>markExit(e.id)}>✓ Mark Exited</button>}
+          {e.exit_time&&<div style={{marginTop:4,fontSize:11,color:'var(--text2)'}}>Exited {e.exit_time?.split('T')[1]?.slice(0,5)}</div>}
         </div></div>
     </div>)}
     {!entries.length&&<div className="empty">No entries</div>}
