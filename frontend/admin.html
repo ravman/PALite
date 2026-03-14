@@ -1141,6 +1141,8 @@ function InvoicesAdmin() {
   const RES_TYPES = ['owner','owner_family','tenant','tenant_family'];
   const TYPE_ICONS = {maintenance:'🔧',repair:'🛠',utility:'💡',amenity:'🏊',event:'🎉',other:'📄'};
 
+  const [invoiceFilter, setInvoiceFilter] = useState('all');
+
   const loadInvoices = () => api('/api/admin/invoices').then(setInvoices);
   const loadPayments = () => api('/api/admin/payments').then(setPayments);
   useEffect(()=>{ loadInvoices(); loadPayments(); },[]);
@@ -1197,8 +1199,31 @@ function InvoicesAdmin() {
 
     {/* ── Invoices tab ── */}
     {tab==='invoices' && <>
-      {!invoices.length && <div className="card"><div className="empty">No invoices raised yet</div></div>}
-      {invoices.map(inv => {
+      {/* Status filter pills */}
+      <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>
+        {[['all','All'],['unpaid','Unpaid'],['paid','Paid'],['cancelled','Cancelled']].map(([k,l])=>{
+          const count = k==='all' ? invoices.length : invoices.filter(inv=>{
+            if(k==='paid') return inv.status==='paid' || (inv.recipient_count>0 && inv.paid_count>=inv.recipient_count);
+            if(k==='unpaid') return inv.status==='unpaid' && !(inv.recipient_count>0 && inv.paid_count>=inv.recipient_count);
+            return inv.status===k;
+          }).length;
+          return <button key={k} onClick={()=>setInvoiceFilter(k)} style={{
+            padding:'5px 14px',borderRadius:20,border:'1px solid var(--border)',fontFamily:'inherit',cursor:'pointer',fontSize:12,fontWeight:600,
+            background:invoiceFilter===k?'var(--accent)':'none',color:invoiceFilter===k?'white':'var(--text2)',
+          }}>{l} <span style={{opacity:0.7}}>({count})</span></button>;
+        })}
+      </div>
+      {(() => {
+        const visibleInvoices = invoices.filter(inv => {
+          if(invoiceFilter==='all') return true;
+          const paidAll = inv.recipient_count>0 ? inv.paid_count>=inv.recipient_count : inv.status==='paid';
+          if(invoiceFilter==='paid') return paidAll;
+          if(invoiceFilter==='unpaid') return inv.status==='unpaid' && !paidAll;
+          return inv.status===invoiceFilter;
+        });
+        return <>
+          {!visibleInvoices.length && <div className="card"><div className="empty">No {invoiceFilter==='all'?'':invoiceFilter} invoices</div></div>}
+          {visibleInvoices.map(inv => {
         const isBulk = inv.recipient_count > 0;
         const paidAll = isBulk ? inv.paid_count >= inv.recipient_count : inv.status==='paid';
         const partPaid = isBulk && inv.paid_count > 0 && inv.paid_count < inv.recipient_count;
@@ -1232,10 +1257,13 @@ function InvoicesAdmin() {
                   👥 {inv.recipient_count} recipient{inv.recipient_count!==1?'s':''}
                 </button>
               : inv.resident_name && <span style={{fontSize:12,color:'var(--text2)'}}>{inv.resident_name} · {inv.unit_number}</span>}
-            {inv.status==='unpaid' && <button className="btn btn-sm btn-red" onClick={()=>cancel(inv.id)}>Cancel</button>}
+            {inv.status==='unpaid' && !(inv.recipient_count>0 && inv.paid_count>=inv.recipient_count) &&
+              <button className="btn btn-sm btn-red" onClick={()=>cancel(inv.id)}>Cancel</button>}
           </div>
         </div>;
       })}
+        </>;
+      })()}
     </>}
 
     {/* ── Payments tab ── */}
