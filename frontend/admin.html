@@ -1606,6 +1606,15 @@ function InvoicesAdmin() {
   </div>;
 }
 
+// ─── Shared form field (defined outside components to prevent focus loss) ─────
+function AdminFormField({l, k, type='text', placeholder, form, setForm}) {
+  return <div className="form-group" style={{marginBottom:10}}>
+    <label style={{fontSize:12,color:'var(--text2)',fontWeight:600,display:'block',marginBottom:4}}>{l}</label>
+    <input className="input" style={{width:'100%'}} type={type} placeholder={placeholder}
+      value={form[k]||''} onChange={e=>setForm(f=>({...f,[k]:e.target.value}))}/>
+  </div>;
+}
+
 function BannersAdmin() {
   const [banners,setBanners]=useState([]);
   const [modal,setModal]=useState(null); // null | 'add' | banner object
@@ -1624,10 +1633,7 @@ function BannersAdmin() {
   const del=id=>{if(confirm('Delete this banner?'))api(`/api/admin/banners/${id}`,{method:'DELETE'}).then(load);};
   const toggle=b=>api(`/api/admin/banners/${b.id}`,{method:'PUT',body:JSON.stringify({...b,bgColor:b.bg_color,imageUrl:b.image_url,ctaText:b.cta_text,ctaUrl:b.cta_url,sortOrder:b.sort_order,isActive:!b.is_active})}).then(load);
 
-  const F=({l,k,type='text',placeholder})=><div className="form-group" style={{marginBottom:10}}>
-    <label style={{fontSize:12,color:'var(--text2)',fontWeight:600,display:'block',marginBottom:4}}>{l}</label>
-    <input className="input" style={{width:'100%'}} type={type} placeholder={placeholder} value={form[k]||''} onChange={e=>setForm(f=>({...f,[k]:e.target.value}))}/>
-  </div>;
+
 
   return <div>
     <div className="top-bar"><h2>📢 Society Banners</h2><button className="btn btn-primary" onClick={openAdd}>+ Add Banner</button></div>
@@ -1660,14 +1666,14 @@ function BannersAdmin() {
     {modal&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000,padding:20}}>
       <div style={{background:'var(--card)',borderRadius:16,padding:28,width:'100%',maxWidth:480,maxHeight:'90vh',overflowY:'auto',border:'1px solid var(--border)'}}>
         <h3 style={{marginBottom:16}}>{modal==='add'?'Add Banner':'Edit Banner'}</h3>
-        <F l="Title" k="title" placeholder="e.g. Annual Day – Save the Date!"/>
-        <F l="Body text" k="body" placeholder="Join us on 15th March at the clubhouse"/>
-        <F l="Background color" k="bgColor" type="color"/>
-        <F l="Background image URL (optional)" k="imageUrl" placeholder="https://..."/>
-        <F l="CTA button text" k="ctaText" placeholder="Learn More"/>
-        <F l="CTA link URL" k="ctaUrl" placeholder="https://..."/>
-        <F l="Sort order (lower = first)" k="sortOrder" type="number"/>
-        <F l="Expires at (optional)" k="expiresAt" type="datetime-local"/>
+        <AdminFormField l="Title" k="title" placeholder="e.g. Annual Day – Save the Date!" form={form} setForm={setForm}/>
+        <AdminFormField l="Body text" k="body" placeholder="Join us on 15th March at the clubhouse" form={form} setForm={setForm}/>
+        <AdminFormField l="Background color" k="bgColor" type="color" form={form} setForm={setForm}/>
+        <AdminFormField l="Background image URL (optional)" k="imageUrl" placeholder="https://..." form={form} setForm={setForm}/>
+        <AdminFormField l="CTA button text" k="ctaText" placeholder="Learn More" form={form} setForm={setForm}/>
+        <AdminFormField l="CTA link URL" k="ctaUrl" placeholder="https://..." form={form} setForm={setForm}/>
+        <AdminFormField l="Sort order (lower = first)" k="sortOrder" type="number" form={form} setForm={setForm}/>
+        <AdminFormField l="Expires at (optional)" k="expiresAt" type="datetime-local" form={form} setForm={setForm}/>
         <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:14}}>
           <input type="checkbox" id="bannerActive" checked={!!form.isActive} onChange={e=>setForm(f=>({...f,isActive:e.target.checked}))}/>
           <label htmlFor="bannerActive" style={{fontSize:13}}>Active (visible to residents)</label>
@@ -1702,10 +1708,7 @@ function AdsAdmin() {
   const del=id=>{if(confirm('Delete this ad?'))api(`/api/admin/ads/${id}`,{method:'DELETE'}).then(load);};
   const toggle=a=>api(`/api/admin/ads/${a.id}`,{method:'PUT',body:JSON.stringify({...a,bgColor:a.bg_color,imageUrl:a.image_url,ctaText:a.cta_text,ctaUrl:a.cta_url,sortOrder:a.sort_order,isActive:!a.is_active})}).then(load);
 
-  const F=({l,k,type='text',placeholder})=><div className="form-group" style={{marginBottom:10}}>
-    <label style={{fontSize:12,color:'var(--text2)',fontWeight:600,display:'block',marginBottom:4}}>{l}</label>
-    <input className="input" style={{width:'100%'}} type={type} placeholder={placeholder} value={form[k]||''} onChange={e=>setForm(f=>({...f,[k]:e.target.value}))}/>
-  </div>;
+
 
   return <div>
     <div className="top-bar"><h2>🏷 Advertisements</h2><button className="btn btn-primary" onClick={openAdd}>+ Add Ad</button></div>
@@ -1739,15 +1742,15 @@ function AdsAdmin() {
     {modal&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000,padding:20}}>
       <div style={{background:'var(--card)',borderRadius:16,padding:28,width:'100%',maxWidth:480,maxHeight:'90vh',overflowY:'auto',border:'1px solid var(--border)'}}>
         <h3 style={{marginBottom:16}}>{modal==='add'?'Add Ad':'Edit Ad'}</h3>
-        <F l="Headline *" k="headline" placeholder="e.g. 20% off at Swiggy for residents"/>
-        <F l="Subtext" k="subtext" placeholder="Use code SOCIETY20 at checkout"/>
-        <F l="Advertiser / brand name" k="advertiser" placeholder="e.g. Swiggy"/>
-        <F l="Background color" k="bgColor" type="color"/>
-        <F l="Background image URL (optional)" k="imageUrl" placeholder="https://..."/>
-        <F l="CTA button text" k="ctaText" placeholder="Get Offer"/>
-        <F l="CTA link URL" k="ctaUrl" placeholder="https://..."/>
-        <F l="Sort order (lower = shown first)" k="sortOrder" type="number"/>
-        <F l="Expires at (optional)" k="expiresAt" type="datetime-local"/>
+        <AdminFormField l="Headline *" k="headline" placeholder="e.g. 20% off at Swiggy for residents" form={form} setForm={setForm}/>
+        <AdminFormField l="Subtext" k="subtext" placeholder="Use code SOCIETY20 at checkout" form={form} setForm={setForm}/>
+        <AdminFormField l="Advertiser / brand name" k="advertiser" placeholder="e.g. Swiggy" form={form} setForm={setForm}/>
+        <AdminFormField l="Background color" k="bgColor" type="color" form={form} setForm={setForm}/>
+        <AdminFormField l="Background image URL (optional)" k="imageUrl" placeholder="https://..." form={form} setForm={setForm}/>
+        <AdminFormField l="CTA button text" k="ctaText" placeholder="Get Offer" form={form} setForm={setForm}/>
+        <AdminFormField l="CTA link URL" k="ctaUrl" placeholder="https://..." form={form} setForm={setForm}/>
+        <AdminFormField l="Sort order (lower = shown first)" k="sortOrder" type="number" form={form} setForm={setForm}/>
+        <AdminFormField l="Expires at (optional)" k="expiresAt" type="datetime-local" form={form} setForm={setForm}/>
         <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:14}}>
           <input type="checkbox" id="adActive" checked={!!form.isActive} onChange={e=>setForm(f=>({...f,isActive:e.target.checked}))}/>
           <label htmlFor="adActive" style={{fontSize:13}}>Active (visible to residents)</label>
