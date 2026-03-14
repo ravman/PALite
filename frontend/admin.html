@@ -173,7 +173,7 @@ function Apartments() {
   // Sorting helpers
   const toggleSort = (current, col, setter) => setter(s => s.col===col ? {...s, dir:s.dir==='asc'?'desc':'asc'} : {col, dir:'asc'});
   const SortIcon = ({col, state}) => <span style={{marginLeft:4,opacity:state.col===col?1:0.3,fontSize:10}}>{state.col===col && state.dir==='desc' ? '▼' : '▲'}</span>;
-  const sortRows = (rows, {col, dir}) => [...rows].sort((a,b) => {
+  const aptSortRows = (rows, {col, dir}) => [...rows].sort((a,b) => {
     const av = a[col]??'', bv = b[col]??'';
     const n = v => (v!==''&&!isNaN(v)) ? Number(v) : null;
     const an=n(av), bn=n(bv);
@@ -199,12 +199,12 @@ function Apartments() {
   const filtered = apartments
     .filter(a => selectedTower==='all' || a.tower_id===selectedTower)
     .filter(a => !q || [a.unit_number,a.tower_name,String(a.floor||''),String(a.bedrooms||''),String(a.area_sqft||'')].some(v=>v.toLowerCase().includes(q)));
-  const sorted = sortRows(filtered, aptSort);
+  const sorted = aptSortRows(filtered, aptSort);
 
   // Filter + sort residents
   const rq = resSearch.toLowerCase();
   const filteredRes = residents.filter(r => !rq || [r.name,r.phone,r.email,r.resident_type,r.status].some(v=>(v||'').toLowerCase().includes(rq)));
-  const sortedRes = sortRows(filteredRes, resSort);
+  const sortedRes = aptSortRows(filteredRes, resSort);
 
   return <div>
     <div className="top-bar" style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:12}}>
@@ -217,7 +217,7 @@ function Apartments() {
 
     {/* Search + Tower filter row */}
     <div style={{display:'flex',gap:10,flexWrap:'wrap',marginBottom:16,alignItems:'center'}}>
-      <SearchBar value={search} onChange={setSearch} placeholder="Search unit, tower, floor, BHK…" style={{flex:'1 1 220px',minWidth:180}}/>
+      <TblSearchBar value={search} onChange={setSearch} placeholder="Search unit, tower, floor, BHK…" style={{flex:'1 1 220px',minWidth:180}}/>
       <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
         {[['all','All Towers'],...towers.map(t=>[t.id,t.name])].map(([id,label])=>
           <button key={id} onClick={()=>setSelectedTower(id)} style={{padding:'5px 14px',borderRadius:20,border:'1px solid var(--border)',background:selectedTower===id?'var(--accent)':'none',color:selectedTower===id?'white':'var(--text2)',cursor:'pointer',fontSize:12,fontWeight:600,fontFamily:'inherit'}}>
@@ -319,7 +319,7 @@ function Apartments() {
             <div style={{fontSize:32,marginBottom:8}}>🏠</div>No residents in this apartment
           </div>}
           {!loadingResidents && residents.length>0 && <>
-            <SearchBar value={resSearch} onChange={setResSearch} placeholder="Search name, phone, type, status…" style={{marginBottom:14}}/>
+            <TblSearchBar value={resSearch} onChange={setResSearch} placeholder="Search name, phone, type, status…" style={{marginBottom:14}}/>
             <div style={{overflowX:'auto'}}>
               <table className="table">
                 <thead><tr>
@@ -372,6 +372,37 @@ function Dashboard() {
   </div>;
 }
 
+// ─── Table utilities (plain functions, not a hook) ────────────────────────────
+function tblSortRows(rows, col, dir) {
+  return [...rows].sort((a,b) => {
+    const av = a[col]??'', bv = b[col]??'';
+    const n = v => (v!==''&&v!=null&&!isNaN(v)) ? Number(v) : null;
+    const an=n(av), bn=n(bv);
+    const cmp = (an!==null&&bn!==null) ? an-bn : String(av).localeCompare(String(bv));
+    return dir==='asc' ? cmp : -cmp;
+  });
+}
+function tblFilter(rows, q, fields) {
+  if(!q) return rows;
+  const lq = q.toLowerCase();
+  return rows.filter(r => fields.some(f => (r[f]||'').toString().toLowerCase().includes(lq)));
+}
+function TblSortTh({col, label, sort, setSort}) {
+  const active = sort.col===col;
+  return <th style={{cursor:'pointer',userSelect:'none',whiteSpace:'nowrap',color:active?'var(--text)':'var(--text2)'}}
+    onClick={()=>setSort(s=>s.col===col?{...s,dir:s.dir==='asc'?'desc':'asc'}:{col,dir:'asc'})}>
+    {label}<span style={{marginLeft:4,opacity:active?1:0.3,fontSize:10}}>{active&&sort.dir==='desc'?'▼':'▲'}</span>
+  </th>;
+}
+function TblSearchBar({value, onChange, placeholder='Search…', style={}}) {
+  return <div style={{position:'relative',flex:'1 1 200px',minWidth:160,...style}}>
+    <span style={{position:'absolute',left:10,top:'50%',transform:'translateY(-50%)',color:'var(--text2)',fontSize:14,pointerEvents:'none'}}>🔍</span>
+    <input value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder}
+      style={{width:'100%',paddingLeft:32,paddingRight:value?28:10,height:34,borderRadius:8,border:'1px solid var(--border)',background:'var(--card2)',color:'var(--text)',fontSize:13,fontFamily:'inherit',boxSizing:'border-box'}}/>
+    {value&&<button onClick={()=>onChange('')} style={{position:'absolute',right:8,top:'50%',transform:'translateY(-50%)',background:'none',border:'none',cursor:'pointer',color:'var(--text2)',fontSize:18,lineHeight:1,padding:0}}>×</button>}
+  </div>;
+}
+
 function Residents() {
   const [res, setRes] = useState([]);
   const [filter, setFilter] = useState('');
@@ -418,14 +449,14 @@ function Residents() {
     load();
   };
 
-  const {sortRows, SortTh, SearchBar, filterRows} = useTableUtils();
+
   const [search, setSearch] = React.useState('');
   const [sort, setSort] = React.useState({col:'name', dir:'asc'});
 
   const isImage = (doc) => doc.data && (doc.data.startsWith('data:image') || /\.(jpg|jpeg|png|gif|webp)$/i.test(doc.file_name||''));
   const isPdf   = (doc) => doc.data && (doc.data.startsWith('data:application/pdf') || /\.pdf$/i.test(doc.file_name||''));
 
-  const displayed = sortRows(filterRows(res, search, ['name','phone','unit_number','tower_name','resident_type','status']), sort);
+  const displayed = tblSortRows(tblFilter(res, search, ['name','phone','unit_number','tower_name','resident_type','status']), sort.col, sort.dir);
 
   return <div>
     <div className="top-bar"><h2>Residents</h2></div>
@@ -433,16 +464,16 @@ function Residents() {
       <div className="tab-bar" style={{margin:0,flex:'none'}}>
         {['','pending','approved','rejected'].map(f=><button key={f} className={`tab ${filter===f?'active':''}`} onClick={()=>setFilter(f)}>{f||'All'}</button>)}
       </div>
-      <SearchBar value={search} onChange={setSearch} placeholder="Search name, phone, unit…"/>
+      <TblSearchBar value={search} onChange={setSearch} placeholder="Search name, phone, unit…"/>
       {search&&<span style={{fontSize:12,color:'var(--text2)',whiteSpace:'nowrap'}}>{displayed.length} result{displayed.length!==1?'s':''}</span>}
     </div>
     <div className="card" style={{overflowX:'auto'}}><table className="table"><thead><tr>
-      <SortTh col="name" label="Name" sort={sort} setSort={setSort}/>
-      <SortTh col="phone" label="Phone" sort={sort} setSort={setSort}/>
-      <SortTh col="unit_number" label="Apartment" sort={sort} setSort={setSort}/>
-      <SortTh col="tower_name" label="Tower" sort={sort} setSort={setSort}/>
-      <SortTh col="resident_type" label="Type" sort={sort} setSort={setSort}/>
-      <SortTh col="status" label="Status" sort={sort} setSort={setSort}/>
+      <TblSortTh col="name" label="Name" sort={sort} setSort={setSort}/>
+      <TblSortTh col="phone" label="Phone" sort={sort} setSort={setSort}/>
+      <TblSortTh col="unit_number" label="Apartment" sort={sort} setSort={setSort}/>
+      <TblSortTh col="tower_name" label="Tower" sort={sort} setSort={setSort}/>
+      <TblSortTh col="resident_type" label="Type" sort={sort} setSort={setSort}/>
+      <TblSortTh col="status" label="Status" sort={sort} setSort={setSort}/>
       <th>Actions</th>
     </tr></thead><tbody>
       {displayed.map(r=><tr key={r.id}>
@@ -565,7 +596,7 @@ function Residents() {
 
 function Spaces() {
   const [spaces,setSpaces]=useState([]);const [modal,setModal]=useState(false);const [editing,setEditing]=useState(null);
-  const {sortRows, SortTh, SearchBar, filterRows} = useTableUtils();
+
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState({col:'name', dir:'asc'});
   const load=()=>api('/api/admin/spaces').then(setSpaces);
@@ -579,18 +610,18 @@ function Spaces() {
   const del=id=>{if(confirm('Delete?'))api(`/api/admin/spaces/${id}`,{method:'DELETE'}).then(load);};
   const fields=[{k:'name',l:'Name'},{k:'description',l:'Description'},{k:'spaceType',l:'Type',type:'select',opts:['common_room','work_area','gym','pool','party_hall','guest_room','other']},{k:'capacity',l:'Capacity',type:'number'},{k:'costPerHour',l:'Cost/Hour',type:'number'},{k:'availableFrom',l:'Open',type:'time'},{k:'availableTo',l:'Close',type:'time'},{k:'isShared',l:'Shared workspace?',type:'select',opts:['false','true']},{k:'totalSpots',l:'Total Spots',type:'number'}];
   const editDefaults=editing?{name:editing.name,description:editing.description,spaceType:editing.space_type,capacity:editing.capacity,costPerHour:editing.cost_per_hour,availableFrom:editing.available_from,availableTo:editing.available_to,isShared:editing.is_shared?'true':'false',totalSpots:editing.total_spots}:null;
-  const displayed = sortRows(filterRows(spaces, search, ['name','description','space_type']), sort);
+  const displayed = tblSortRows(tblFilter(spaces, search, ['name','description','space_type']), sort.col, sort.dir);
   return <div><div className="top-bar"><h2>Spaces</h2>
     <div style={{display:'flex',gap:8,alignItems:'center'}}>
-      <SearchBar value={search} onChange={setSearch} placeholder="Search name, type…"/>
+      <TblSearchBar value={search} onChange={setSearch} placeholder="Search name, type…"/>
       <button className="btn btn-primary" onClick={openAdd}>+ Add Space</button>
     </div>
   </div>
     <div className="card" style={{overflowX:'auto'}}><table className="table"><thead><tr>
-      <SortTh col="name" label="Name" sort={sort} setSort={setSort}/>
-      <SortTh col="space_type" label="Type" sort={sort} setSort={setSort}/>
-      <SortTh col="capacity" label="Capacity" sort={sort} setSort={setSort}/>
-      <SortTh col="cost_per_hour" label="Cost/hr" sort={sort} setSort={setSort}/>
+      <TblSortTh col="name" label="Name" sort={sort} setSort={setSort}/>
+      <TblSortTh col="space_type" label="Type" sort={sort} setSort={setSort}/>
+      <TblSortTh col="capacity" label="Capacity" sort={sort} setSort={setSort}/>
+      <TblSortTh col="cost_per_hour" label="Cost/hr" sort={sort} setSort={setSort}/>
       <th>Hours</th><th>Shared</th><th>Actions</th>
     </tr></thead><tbody>
       {displayed.map(s=><tr key={s.id}><td><b>{s.name}</b><br/><span style={{fontSize:11,color:'var(--text2)'}}>{s.description}</span></td><td>{s.space_type}</td><td>{s.capacity}</td><td style={{fontFamily:'Space Mono'}}>Rs.{s.cost_per_hour}</td><td>{s.available_from}-{s.available_to}</td><td>{s.is_shared?`Yes (${s.total_spots} spots)`:'No'}</td>
@@ -603,21 +634,21 @@ function Spaces() {
 
 function Bookings() {
   const [bk,setBk]=useState([]);
-  const {sortRows, SortTh, SearchBar, filterRows} = useTableUtils();
+
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState({col:'booking_date', dir:'desc'});
   useEffect(()=>{api('/api/admin/bookings').then(setBk);},[]);
-  const displayed = sortRows(filterRows(bk, search, ['space_name','booked_by','booking_date','status']), sort);
+  const displayed = tblSortRows(tblFilter(bk, search, ['space_name','booked_by','booking_date','status']), sort.col, sort.dir);
   return <div><div className="top-bar"><h2>Bookings</h2>
-    <SearchBar value={search} onChange={setSearch} placeholder="Search space, resident, date…"/>
+    <TblSearchBar value={search} onChange={setSearch} placeholder="Search space, resident, date…"/>
   </div>
     <div className="card" style={{overflowX:'auto'}}><table className="table"><thead><tr>
-      <SortTh col="space_name" label="Space" sort={sort} setSort={setSort}/>
-      <SortTh col="booked_by" label="Booked By" sort={sort} setSort={setSort}/>
-      <SortTh col="booking_date" label="Date" sort={sort} setSort={setSort}/>
+      <TblSortTh col="space_name" label="Space" sort={sort} setSort={setSort}/>
+      <TblSortTh col="booked_by" label="Booked By" sort={sort} setSort={setSort}/>
+      <TblSortTh col="booking_date" label="Date" sort={sort} setSort={setSort}/>
       <th>Time</th>
-      <SortTh col="total_cost" label="Cost" sort={sort} setSort={setSort}/>
-      <SortTh col="status" label="Status" sort={sort} setSort={setSort}/>
+      <TblSortTh col="total_cost" label="Cost" sort={sort} setSort={setSort}/>
+      <TblSortTh col="status" label="Status" sort={sort} setSort={setSort}/>
     </tr></thead><tbody>
       {displayed.map(b=><tr key={b.id}><td>{b.space_name}</td><td>{b.booked_by}</td><td>{b.booking_date}</td><td>{b.start_time}-{b.end_time}</td><td style={{fontFamily:'Space Mono'}}>Rs.{b.total_cost}</td>
         <td><span className={`badge badge-${b.status==='confirmed'?'green':b.status==='pending'?'orange':'red'}`}>{b.status}</span></td></tr>)}
@@ -639,7 +670,7 @@ function Approvals() {
   const [rejectErr, setRejectErr] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [lightbox, setLightbox] = useState(null);
-  const {sortRows, SortTh, SearchBar, filterRows} = useTableUtils();
+
   const [moveSearch, setMoveSearch] = useState('');
   const [moveSort, setMoveSort] = useState({col:'name', dir:'asc'});
   const [leaseSearch, setLeaseSearch] = useState('');
@@ -723,18 +754,18 @@ function Approvals() {
     {/* ── Move Requests ── */}
     {tab==='moves' && <div className="card" style={{overflowX:'auto'}}>
       <div style={{padding:'12px 0 8px',display:'flex',gap:8,alignItems:'center'}}>
-        <SearchBar value={moveSearch} onChange={setMoveSearch} placeholder="Search name, phone, unit, status…"/>
-        {moveSearch&&<span style={{fontSize:12,color:'var(--text2)',whiteSpace:'nowrap'}}>{sortRows(filterRows(moves,moveSearch,['name','phone','unit_number','tower_name','move_type','status']),moveSort).length} result{sortRows(filterRows(moves,moveSearch,['name','phone','unit_number','tower_name','move_type','status']),moveSort).length!==1?'s':''}</span>}
+        <TblSearchBar value={moveSearch} onChange={setMoveSearch} placeholder="Search name, phone, unit, status…"/>
+        {moveSearch&&<span style={{fontSize:12,color:'var(--text2)',whiteSpace:'nowrap'}}>{tblSortRows(tblFilter(moves,moveSearch,['name','phone','unit_number','tower_name','move_type','status']), moveSort.col, moveSort.dir).length} result{tblSortRows(tblFilter(moves,moveSearch,['name','phone','unit_number','tower_name','move_type','status']), moveSort.col, moveSort.dir).length!==1?'s':''}</span>}
       </div>
       <table className="table"><thead><tr>
-        <SortTh col="name" label="Name" sort={moveSort} setSort={setMoveSort}/>
-        <SortTh col="unit_number" label="Apartment" sort={moveSort} setSort={setMoveSort}/>
-        <SortTh col="move_type" label="Type" sort={moveSort} setSort={setMoveSort}/>
-        <SortTh col="tentative_start" label="Dates" sort={moveSort} setSort={setMoveSort}/>
-        <SortTh col="status" label="Status" sort={moveSort} setSort={setMoveSort}/>
+        <TblSortTh col="name" label="Name" sort={moveSort} setSort={setMoveSort}/>
+        <TblSortTh col="unit_number" label="Apartment" sort={moveSort} setSort={setMoveSort}/>
+        <TblSortTh col="move_type" label="Type" sort={moveSort} setSort={setMoveSort}/>
+        <TblSortTh col="tentative_start" label="Dates" sort={moveSort} setSort={setMoveSort}/>
+        <TblSortTh col="status" label="Status" sort={moveSort} setSort={setMoveSort}/>
         <th>Actions</th>
       </tr></thead><tbody>
-        {sortRows(filterRows(moves,moveSearch,['name','phone','unit_number','tower_name','move_type','status']),moveSort).map(m=><tr key={m.id}>
+        {tblSortRows(tblFilter(moves,moveSearch,['name','phone','unit_number','tower_name','move_type','status']), moveSort.col, moveSort.dir).map(m=><tr key={m.id}>
           <td>{m.name}<br/><span style={{fontSize:11,color:'var(--text2)'}}>{m.phone}</span></td>
           <td>{m.unit_number} · {m.tower_name}</td>
           <td><span className={`badge badge-${m.move_type==='move_in'?'green':'red'}`}>{m.move_type?.replace('_',' ')}</span></td>
@@ -749,27 +780,27 @@ function Approvals() {
               : <button className="btn btn-sm" style={{background:'var(--card2)',border:'1px solid var(--border)',color:'var(--text2)'}} onClick={()=>openReview('move',m)}>View Docs</button>}
           </td>
         </tr>)}
-        {!filterRows(moves,moveSearch,['name','phone','unit_number','tower_name','move_type','status']).length&&<tr><td colSpan={6} style={{textAlign:'center',color:'var(--text2)',padding:32}}>{moveSearch?'No requests match your search':'No move requests'}</td></tr>}
+        {!tblFilter(moves,moveSearch,['name','phone','unit_number','tower_name','move_type','status']).length&&<tr><td colSpan={6} style={{textAlign:'center',color:'var(--text2)',padding:32}}>{moveSearch?'No requests match your search':'No move requests'}</td></tr>}
       </tbody></table>
     </div>}
 
     {/* ── Lease Extensions ── */}
     {tab==='leases' && <div className="card" style={{overflowX:'auto'}}>
       <div style={{padding:'12px 0 8px',display:'flex',gap:8,alignItems:'center'}}>
-        <SearchBar value={leaseSearch} onChange={setLeaseSearch} placeholder="Search name, phone, unit, status…"/>
-        {leaseSearch&&<span style={{fontSize:12,color:'var(--text2)',whiteSpace:'nowrap'}}>{filterRows(leases,leaseSearch,['name','phone','unit_number','tower_name','status']).length} results</span>}
+        <TblSearchBar value={leaseSearch} onChange={setLeaseSearch} placeholder="Search name, phone, unit, status…"/>
+        {leaseSearch&&<span style={{fontSize:12,color:'var(--text2)',whiteSpace:'nowrap'}}>{tblFilter(leases,leaseSearch,['name','phone','unit_number','tower_name','status']).length} results</span>}
       </div>
       <table className="table"><thead><tr>
-        <SortTh col="name" label="Name" sort={leaseSort} setSort={setLeaseSort}/>
-        <SortTh col="unit_number" label="Apartment" sort={leaseSort} setSort={setLeaseSort}/>
-        <SortTh col="phone" label="Phone" sort={leaseSort} setSort={setLeaseSort}/>
-        <SortTh col="current_end" label="Current End" sort={leaseSort} setSort={setLeaseSort}/>
-        <SortTh col="requested_end" label="Requested End" sort={leaseSort} setSort={setLeaseSort}/>
+        <TblSortTh col="name" label="Name" sort={leaseSort} setSort={setLeaseSort}/>
+        <TblSortTh col="unit_number" label="Apartment" sort={leaseSort} setSort={setLeaseSort}/>
+        <TblSortTh col="phone" label="Phone" sort={leaseSort} setSort={setLeaseSort}/>
+        <TblSortTh col="current_end" label="Current End" sort={leaseSort} setSort={setLeaseSort}/>
+        <TblSortTh col="requested_end" label="Requested End" sort={leaseSort} setSort={setLeaseSort}/>
         <th>Notes</th>
-        <SortTh col="status" label="Status" sort={leaseSort} setSort={setLeaseSort}/>
+        <TblSortTh col="status" label="Status" sort={leaseSort} setSort={setLeaseSort}/>
         <th>Actions</th>
       </tr></thead><tbody>
-        {sortRows(filterRows(leases,leaseSearch,['name','phone','unit_number','tower_name','status']),leaseSort).map(l=><tr key={l.id}>
+        {tblSortRows(tblFilter(leases,leaseSearch,['name','phone','unit_number','tower_name','status']), leaseSort.col, leaseSort.dir).map(l=><tr key={l.id}>
           <td>{l.name}</td>
           <td>{l.unit_number} · {l.tower_name}</td>
           <td style={{fontSize:12}}>{l.phone}</td>
@@ -783,7 +814,7 @@ function Approvals() {
               : <button className="btn btn-sm" style={{background:'var(--card2)',border:'1px solid var(--border)',color:'var(--text2)'}} onClick={()=>openReview('lease',l)}>View Docs</button>}
           </td>
         </tr>)}
-        {!filterRows(leases,leaseSearch,['name','phone','unit_number','tower_name','status']).length&&<tr><td colSpan={8} style={{textAlign:'center',color:'var(--text2)',padding:32}}>{leaseSearch?'No extensions match your search':'No lease extensions'}</td></tr>}
+        {!tblFilter(leases,leaseSearch,['name','phone','unit_number','tower_name','status']).length&&<tr><td colSpan={8} style={{textAlign:'center',color:'var(--text2)',padding:32}}>{leaseSearch?'No extensions match your search':'No lease extensions'}</td></tr>}
       </tbody></table>
     </div>}
 
@@ -932,25 +963,25 @@ function Approvals() {
 
 function DailyHelp() {
   const [help,setHelp]=useState([]);const [modal,setModal]=useState(false);
-  const {sortRows, SortTh, SearchBar, filterRows} = useTableUtils();
+
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState({col:'name', dir:'asc'});
   const load=()=>api('/api/admin/daily-help').then(setHelp);
   useEffect(()=>{load();},[]);
   const add=d=>{api('/api/admin/daily-help',{method:'POST',body:JSON.stringify(d)}).then(()=>{load();setModal(false);});};
-  const displayed = sortRows(filterRows(help, search, ['name','phone','help_type','status']), sort);
+  const displayed = tblSortRows(tblFilter(help, search, ['name','phone','help_type','status']), sort.col, sort.dir);
   return <div><div className="top-bar"><h2>Daily Help</h2>
     <div style={{display:'flex',gap:8,alignItems:'center'}}>
-      <SearchBar value={search} onChange={setSearch} placeholder="Search name, phone, type…"/>
+      <TblSearchBar value={search} onChange={setSearch} placeholder="Search name, phone, type…"/>
       <button className="btn btn-primary" onClick={()=>setModal(true)}>+ Add</button>
     </div>
   </div>
     <div className="card" style={{overflowX:'auto'}}><table className="table"><thead><tr>
-      <SortTh col="name" label="Name" sort={sort} setSort={setSort}/>
-      <SortTh col="phone" label="Phone" sort={sort} setSort={setSort}/>
-      <SortTh col="help_type" label="Type" sort={sort} setSort={setSort}/>
+      <TblSortTh col="name" label="Name" sort={sort} setSort={setSort}/>
+      <TblSortTh col="phone" label="Phone" sort={sort} setSort={setSort}/>
+      <TblSortTh col="help_type" label="Type" sort={sort} setSort={setSort}/>
       <th>ID Code</th><th>QR Code</th>
-      <SortTh col="status" label="Status" sort={sort} setSort={setSort}/>
+      <TblSortTh col="status" label="Status" sort={sort} setSort={setSort}/>
       <th>Assignments</th><th>Actions</th>
     </tr></thead><tbody>
       {displayed.map(h=><tr key={h.id}><td>{h.name}</td><td>{h.phone}</td><td>{h.help_type}</td><td style={{fontFamily:'Space Mono',fontSize:12}}>{h.id_code}</td><td style={{fontFamily:'Space Mono',fontSize:12}}>{h.qr_code}</td>
@@ -1240,7 +1271,7 @@ function InvoicesAdmin() {
 
   const [invoiceFilter, setInvoiceFilter] = useState('all');
   const [invoiceSearch, setInvoiceSearch] = useState('');
-  const {SearchBar: InvSearchBar, filterRows: invFilter} = useTableUtils();
+
 
   const loadInvoices = () => api('/api/admin/invoices').then(setInvoices);
   const loadPayments = () => api('/api/admin/payments').then(setPayments);
@@ -1309,7 +1340,7 @@ function InvoicesAdmin() {
     {/* ── Invoices tab ── */}
     {tab==='invoices' && <>
       {/* Search + Status filter pills */}
-      <InvSearchBar value={invoiceSearch} onChange={setInvoiceSearch} placeholder="Search title, type, resident, unit…" style={{marginBottom:8}}/>
+      <TblSearchBar value={invoiceSearch} onChange={setInvoiceSearch} placeholder="Search title, type, resident, unit…" style={{marginBottom:8}}/>
       <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>
         {[['all','All'],['unpaid','Unpaid'],['paid','Paid'],['cancelled','Cancelled']].map(([k,l])=>{
           const count = k==='all' ? invoices.length : invoices.filter(inv=>{
@@ -1324,7 +1355,7 @@ function InvoicesAdmin() {
         })}
       </div>
       {(() => {
-        const visibleInvoices = invFilter(invoices, invoiceSearch, ['title','description','invoice_type','resident_name','unit_number']).filter(inv => {
+        const visibleInvoices = tblFilter(invoices, invoiceSearch, ['title','description','invoice_type','resident_name','unit_number']).filter(inv => {
           if(invoiceFilter==='all') return true;
           const paidAll = inv.recipient_count>0 ? inv.paid_count>=inv.recipient_count : inv.status==='paid';
           if(invoiceFilter==='paid') return paidAll;
@@ -1379,22 +1410,22 @@ function InvoicesAdmin() {
     {/* ── Payments tab ── */}
     {tab==='payments' && <div className="card" style={{overflowX:'auto'}}>
       {(() => {
-        const {sortRows, SortTh, SearchBar, filterRows} = useTableUtils();
+      
         const [pSearch, setPSearch] = React.useState('');
         const [pSort, setPSort] = React.useState({col:'created_at', dir:'desc'});
-        const shown = sortRows(filterRows(payments, pSearch, ['resident_name','phone','unit_number','tower_name','title']), pSort);
+        const shown = tblSortRows(tblFilter(payments, pSearch, ['resident_name','phone','unit_number','tower_name','title']), pSort.col, pSort.dir);
         return <>
           <div style={{padding:'12px 0 8px',display:'flex',gap:8,alignItems:'center'}}>
-            <SearchBar value={pSearch} onChange={setPSearch} placeholder="Search resident, unit, invoice…"/>
+            <TblSearchBar value={pSearch} onChange={setPSearch} placeholder="Search resident, unit, invoice…"/>
             {pSearch&&<span style={{fontSize:12,color:'var(--text2)',whiteSpace:'nowrap'}}>{shown.length} result{shown.length!==1?'s':''}</span>}
           </div>
           <table className="table"><thead><tr>
-            <SortTh col="resident_name" label="Resident" sort={pSort} setSort={setPSort}/>
-            <SortTh col="unit_number" label="Apartment" sort={pSort} setSort={setPSort}/>
-            <SortTh col="title" label="Invoice" sort={pSort} setSort={setPSort}/>
-            <SortTh col="amount" label="Amount" sort={pSort} setSort={setPSort}/>
+            <TblSortTh col="resident_name" label="Resident" sort={pSort} setSort={setPSort}/>
+            <TblSortTh col="unit_number" label="Apartment" sort={pSort} setSort={setPSort}/>
+            <TblSortTh col="title" label="Invoice" sort={pSort} setSort={setPSort}/>
+            <TblSortTh col="amount" label="Amount" sort={pSort} setSort={setPSort}/>
             <th>Txn ID</th>
-            <SortTh col="created_at" label="Date" sort={pSort} setSort={setPSort}/>
+            <TblSortTh col="created_at" label="Date" sort={pSort} setSort={setPSort}/>
           </tr></thead>
             <tbody>
               {shown.map(p=><tr key={p.id}>
