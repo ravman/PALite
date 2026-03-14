@@ -1256,12 +1256,10 @@ function HomePage({ctx, setPage}) {
     : 0;
 
   const tiles = [
-    { key:'gate',    label:'Gate',          color:'#9B7B6A', page:'visitors',    illustration: TileIllustrations.gate },
-    { key:'booking', label:'Space Booking', color:'#6B7FA3', page:'bookings',    illustration: TileIllustrations.booking },
-    { key:'visitor', label:'Visitors',      color:'#C4A882', page:'visitors',    illustration: TileIllustrations.visitors },
-    { key:'market',  label:'Marketplace',   color:'#8A9E8A', page:'marketplace', illustration: TileIllustrations.marketplace },
-    { key:'news',    label:'Society News',  color:'#B06B5A', page:'news',        illustration: TileIllustrations.news },
-    { key:'profile', label:'My Profile',    color:'#6A7D9B', page:'profile',     illustration: TileIllustrations.booking },
+    { key:'visitor', label:'Visitors',     color:'#9B7B6A', page:'visitors',    illustration: TileIllustrations.gate },
+    { key:'market',  label:'Marketplace',  color:'#8A9E8A', page:'marketplace', illustration: TileIllustrations.marketplace },
+    { key:'news',    label:'Society News', color:'#B06B5A', page:'news',        illustration: TileIllustrations.news },
+    { key:'profile', label:'My Profile',   color:'#6A7D9B', page:'profile',     illustration: TileIllustrations.booking },
     ...(isAdmin ? [{ key:'admin', label:'Admin Panel', color:'#3d2b6e', page:'admin', illustration: TileIllustrations.admin }] : []),
   ];
 
@@ -1325,7 +1323,7 @@ function HomePage({ctx, setPage}) {
         <div key={t.key} className="tile" style={{background:t.color}} onClick={()=>setPage(t.page)}>
           {t.illustration}
           <div className="tile-label">{t.label}</div>
-          {t.key==='gate' && pendingCount>0 &&
+          {t.key==='visitor' && pendingCount>0 &&
             <div className="tile-pending">{pendingCount} pending</div>}
           {t.key==='admin' && adminPending>0 &&
             <div className="tile-pending" style={{background:'rgba(225,112,85,0.85)'}}>{adminPending} pending</div>}
@@ -1366,7 +1364,7 @@ function HomePage({ctx, setPage}) {
         <div key={t.key} className="tile" style={{background:t.color}} onClick={()=>setPage(t.page)}>
           {t.illustration}
           <div className="tile-label">{t.label}</div>
-          {t.key==='gate' && pendingCount>0 &&
+          {t.key==='visitor' && pendingCount>0 &&
             <div className="tile-pending">{pendingCount} pending</div>}
           {t.key==='admin' && adminPending>0 &&
             <div className="tile-pending" style={{background:'rgba(225,112,85,0.85)'}}>{adminPending} pending</div>}

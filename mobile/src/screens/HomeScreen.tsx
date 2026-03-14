@@ -15,12 +15,10 @@ function getGreeting() {
 }
 
 const BASE_TILES = [
-  { key: 'gate',    label: 'Gate',          color: '#9B7B6A', screen: 'Visitors',    emoji: '🛵' },
-  { key: 'booking', label: 'Space Booking', color: '#6B7FA3', screen: 'Bookings',    emoji: '🏊' },
-  { key: 'visitor', label: 'Visitors',      color: '#C4A882', screen: 'Visitors',    emoji: '👥' },
-  { key: 'market',  label: 'Marketplace',   color: '#8A9E8A', screen: 'Marketplace', emoji: '🛍️' },
-  { key: 'news',    label: 'Society News',  color: '#B06B5A', screen: 'News',        emoji: '📰' },
-  { key: 'profile', label: 'My Profile',    color: '#6A7D9B', screen: 'Profile',     emoji: '👤' },
+  { key: 'visitor', label: 'Visitors',     color: '#9B7B6A', screen: 'Visitors',    emoji: '👥' },
+  { key: 'market',  label: 'Marketplace',  color: '#8A9E8A', screen: 'Marketplace', emoji: '🛍️' },
+  { key: 'news',    label: 'Society News', color: '#B06B5A', screen: 'News',        emoji: '📰' },
+  { key: 'profile', label: 'My Profile',   color: '#6A7D9B', screen: 'Profile',     emoji: '👤' },
 ];
 
 const ADMIN_TILE = { key: 'admin', label: 'Admin Panel', color: '#3d2b6e', screen: 'Admin', emoji: '🛡️' };
@@ -85,7 +83,7 @@ export default function HomeScreen({ ctx, navigate }: { ctx: any; navigate: (scr
           >
             <Text style={styles.tileEmoji}>{t.emoji}</Text>
             <Text style={styles.tileLabel}>{t.label}</Text>
-            {t.key === 'gate' && pendingCount > 0 && (
+            {t.key === 'visitor' && pendingCount > 0 && (
               <View style={styles.tileBadge}>
                 <Text style={styles.tileBadgeText}>{pendingCount} pending</Text>
               </View>
