@@ -129,9 +129,9 @@ const styles = StyleSheet.create({
   },
   avatarText: { fontSize: 14, fontWeight: '700', color: colors.white },
   grid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 20, gap: 10 },
-  tile: { width: TILE_SIZE, height: TILE_SIZE, borderRadius: 20, padding: 16, justifyContent: 'flex-end', overflow: 'hidden' },
+  tile: { width: TILE_SIZE, height: TILE_SIZE, borderRadius: 20, padding: 16, justifyContent: 'flex-end', alignItems: 'center', overflow: 'hidden' },
   tileEmoji: { fontSize: 40, position: 'absolute', top: 16, left: 16, opacity: 0.8 },
-  tileLabel: { fontSize: 15, fontWeight: '600', color: colors.white },
+  tileLabel: { fontSize: 15, fontWeight: '600', color: colors.white, textAlign: 'center' },
   tileBadge: {
     position: 'absolute', top: 10, right: 10,
     backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: 20, paddingHorizontal: 8, paddingVertical: 2,
