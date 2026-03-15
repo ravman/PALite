@@ -408,7 +408,7 @@ def cancel_invitation(vid): get_db().execute("UPDATE visitor_invitations SET sta
 def marketplace():
     import json as _json
     if not g.soc: return jsonify([])
-    posts = drs(get_db().execute("SELECT mp.*, u.name as posted_by FROM marketplace_posts mp JOIN users u ON mp.user_id=u.id WHERE mp.society_id=? AND mp.status='active' ORDER BY mp.created_at DESC",(g.soc,)).fetchall())
+    posts = drs(get_db().execute("SELECT mp.*, u.name as posted_by, u.phone as posted_by_phone FROM marketplace_posts mp JOIN users u ON mp.user_id=u.id WHERE mp.society_id=? AND mp.status='active' ORDER BY mp.created_at DESC",(g.soc,)).fetchall())
     for p in posts:
         try: p['images'] = _json.loads(p['images']) if p.get('images') else []
         except: p['images'] = []

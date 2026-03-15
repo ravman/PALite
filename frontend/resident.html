@@ -2509,14 +2509,16 @@ function LeaseExtensionModal({ ctx, onClose, onSubmit }) {
 }
 
 function MarketplacePage({setPage, prefill}) {
-  const [posts, setPosts] = useState([]);
-  const [modal, setModal] = useState(false);
-  const [form, setForm] = useState({postType:'sell',title:'',description:'',price:''});
-  const [photos, setPhotos] = useState([]); // array of base64 strings
-  const [lightbox, setLightbox] = useState(null); // {images, index}
+  const [posts, setPosts]       = useState([]);
+  const [detail, setDetail]     = useState(null); // selected post for detail view
+  const [photoIdx, setPhotoIdx] = useState(0);    // active photo in detail
+  const [modal, setModal]       = useState(false);
+  const [form, setForm]         = useState({postType:'sell',title:'',description:'',price:''});
+  const [photos, setPhotos]     = useState([]);
+  const [filter, setFilter]     = useState('all'); // all | sell | buy
   const fileInputRef = React.useRef(null);
 
-  useEffect(()=>{ api('/api/marketplace').then(setPosts); },[]);
+  useEffect(()=>{ api('/api/marketplace').then(d=>setPosts(Array.isArray(d)?d:[])); },[]);
 
   useEffect(()=>{
     if(!prefill) return;
@@ -2533,78 +2535,180 @@ function MarketplacePage({setPage, prefill}) {
   const addPhotos = (e) => {
     const files = Array.from(e.target.files);
     if(photos.length + files.length > 6) return alert('Maximum 6 photos per listing');
-    files.forEach(file=>{
-      const reader = new FileReader();
-      reader.onload = ev => setPhotos(p=>[...p, ev.target.result]);
-      reader.readAsDataURL(file);
-    });
+    files.forEach(file=>{ const r=new FileReader(); r.onload=ev=>setPhotos(p=>[...p,ev.target.result]); r.readAsDataURL(file); });
     e.target.value = '';
   };
-
-  const removePhoto = (i) => setPhotos(p=>p.filter((_,idx)=>idx!==i));
 
   const create = () => {
     if(!form.title) return alert('Title required');
     api('/api/marketplace',{method:'POST',body:JSON.stringify({...form,price:parseFloat(form.price)||0,images:photos})})
-      .then(()=>{ api('/api/marketplace').then(setPosts); setModal(false); setForm({postType:'sell',title:'',description:'',price:''}); setPhotos([]); });
+      .then(()=>{ api('/api/marketplace').then(d=>setPosts(Array.isArray(d)?d:[])); setModal(false); setForm({postType:'sell',title:'',description:'',price:''}); setPhotos([]); });
   };
 
+  const openDetail = (p) => { setDetail(p); setPhotoIdx(0); };
 
+  const fmtDate = dt => { if(!dt) return ''; const d=new Date(dt); return d.toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'}); };
 
-  return <div>
-    <PageHeader title="Marketplace" onBack={()=>setPage('home')}/>
-    <div className="page">
+  const visible = filter==='all' ? posts : posts.filter(p=>p.post_type===filter);
 
-    {/* Post list */}
-    <button className="btn btn-primary mb-4" style={{width:'100%'}} onClick={()=>setModal(true)}>+ New Listing</button>
-    {posts.map(p=><div key={p.id} className="card">
-      {p.images&&p.images.length>0&&<div style={{display:'grid',gridTemplateColumns:`repeat(${Math.min(p.images.length,3)},1fr)`,gap:4,borderRadius:10,overflow:'hidden',marginBottom:10}}>
-        {p.images.slice(0,3).map((img,i)=><div key={i} style={{position:'relative',cursor:'pointer'}} onClick={()=>setLightbox({images:p.images,index:i})}>
-          <img src={img} style={{width:'100%',aspectRatio:'1',objectFit:'cover',display:'block'}}/>
-          {i===2&&p.images.length>3&&<div style={{position:'absolute',inset:0,background:'rgba(0,0,0,0.55)',display:'flex',alignItems:'center',justifyContent:'center',color:'white',fontWeight:700,fontSize:18}}>+{p.images.length-3}</div>}
-        </div>)}
+  // ── Detail page ─────────────────────────────────────────────────────────────
+  if(detail) {
+    const imgs = detail.images||[];
+    const onCall = () => window.open(`tel:${detail.posted_by_phone}`);
+    const onWhatsApp = () => window.open(`https://wa.me/91${detail.posted_by_phone}?text=${encodeURIComponent(`Hi! I saw your listing on PA Lite — "${detail.title}". Is it still available?`)}`);
+
+    return <div style={{background:'var(--bg)',minHeight:'100vh'}}>
+      {/* Header */}
+      <div style={{display:'flex',alignItems:'center',gap:12,padding:'16px 20px 12px',position:'sticky',top:0,background:'var(--bg)',zIndex:10}}>
+        <button onClick={()=>setDetail(null)} style={{width:36,height:36,borderRadius:'50%',background:'var(--card2)',border:'none',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',color:'var(--text)',fontSize:18,fontWeight:700}}>‹</button>
+        <span style={{fontSize:18,fontWeight:700,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{detail.title}</span>
+      </div>
+
+      {/* Photo carousel */}
+      {imgs.length>0 ? <div style={{position:'relative',background:'#000',marginBottom:0}}>
+        <img src={imgs[photoIdx]} style={{width:'100%',height:280,objectFit:'contain',display:'block'}}/>
+        {/* Prev / Next */}
+        {imgs.length>1 && <>
+          <button onClick={()=>setPhotoIdx(i=>Math.max(0,i-1))} disabled={photoIdx===0}
+            style={{position:'absolute',left:12,top:'50%',transform:'translateY(-50%)',width:36,height:36,borderRadius:'50%',background:'rgba(0,0,0,0.5)',border:'none',color:'white',fontSize:20,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',opacity:photoIdx===0?0.3:1}}>‹</button>
+          <button onClick={()=>setPhotoIdx(i=>Math.min(imgs.length-1,i+1))} disabled={photoIdx===imgs.length-1}
+            style={{position:'absolute',right:12,top:'50%',transform:'translateY(-50%)',width:36,height:36,borderRadius:'50%',background:'rgba(0,0,0,0.5)',border:'none',color:'white',fontSize:20,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',opacity:photoIdx===imgs.length-1?0.3:1}}>›</button>
+          {/* Dot indicators */}
+          <div style={{position:'absolute',bottom:10,left:0,right:0,display:'flex',justifyContent:'center',gap:5}}>
+            {imgs.map((_,i)=><div key={i} onClick={()=>setPhotoIdx(i)} style={{width:i===photoIdx?18:6,height:6,borderRadius:3,background:i===photoIdx?'white':'rgba(255,255,255,0.4)',transition:'all .2s',cursor:'pointer'}}/>)}
+          </div>
+        </>}
+        {/* Thumbnail strip */}
+        {imgs.length>1 && <div style={{display:'flex',gap:6,padding:'8px 16px',overflowX:'auto',background:'var(--bg)'}}>
+          {imgs.map((img,i)=><div key={i} onClick={()=>setPhotoIdx(i)} style={{flexShrink:0,width:56,height:56,borderRadius:8,overflow:'hidden',border:`2px solid ${i===photoIdx?'var(--accent)':'transparent'}`,cursor:'pointer',transition:'border-color .15s'}}>
+            <img src={img} style={{width:'100%',height:'100%',objectFit:'cover'}}/>
+          </div>)}
+        </div>}
+      </div>
+      : <div style={{height:180,background:'var(--card2)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:56,marginBottom:0}}>
+          {detail.post_type==='sell'?'🏷️':'🛒'}
+        </div>}
+
+      {/* Details */}
+      <div style={{padding:'20px 20px 120px'}}>
+        {/* Price + type row */}
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
+          <div style={{fontSize:28,fontWeight:800,color:'var(--green)',fontFamily:'Space Mono'}}>
+            {detail.price>0 ? `₹${Number(detail.price).toLocaleString('en-IN')}` : 'Free'}
+          </div>
+          <span style={{fontSize:12,fontWeight:700,padding:'4px 14px',borderRadius:20,
+            background:detail.post_type==='sell'?'rgba(108,92,231,.15)':'rgba(253,203,110,.15)',
+            color:detail.post_type==='sell'?'var(--accent)':'var(--orange)',
+            border:`1px solid ${detail.post_type==='sell'?'var(--accent)':'var(--orange)'}`,
+            textTransform:'uppercase',letterSpacing:0.5}}>
+            {detail.post_type==='sell'?'For Sale':'Wanted'}
+          </span>
+        </div>
+
+        {/* Title */}
+        <div style={{fontSize:20,fontWeight:700,color:'var(--text)',marginBottom:8}}>{detail.title}</div>
+
+        {/* Description */}
+        {detail.description && <div style={{fontSize:14,color:'var(--text2)',lineHeight:1.7,marginBottom:20,whiteSpace:'pre-wrap'}}>{detail.description}</div>}
+
+        {/* Divider */}
+        <div style={{height:1,background:'var(--border)',marginBottom:16}}/>
+
+        {/* Posted by */}
+        <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:24}}>
+          <div style={{width:44,height:44,borderRadius:'50%',background:'var(--accent)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,fontWeight:700,color:'white',flexShrink:0}}>
+            {(detail.posted_by||'?')[0].toUpperCase()}
+          </div>
+          <div>
+            <div style={{fontWeight:600,fontSize:14,color:'var(--text)'}}>{detail.posted_by}</div>
+            <div style={{fontSize:12,color:'var(--text2)',marginTop:2}}>Listed {fmtDate(detail.created_at)}</div>
+          </div>
+        </div>
+
+        {/* Contact buttons */}
+        {detail.posted_by_phone && <div style={{display:'flex',gap:10}}>
+          <button onClick={onWhatsApp} style={{flex:1,padding:'14px 0',borderRadius:14,border:'none',background:'#25D366',color:'white',fontWeight:700,fontSize:15,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
+            <span style={{fontSize:20}}>💬</span> WhatsApp
+          </button>
+          <button onClick={onCall} style={{flex:1,padding:'14px 0',borderRadius:14,border:'1px solid var(--border)',background:'var(--card2)',color:'var(--text)',fontWeight:700,fontSize:15,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
+            <span style={{fontSize:20}}>📞</span> Call
+          </button>
+        </div>}
+      </div>
+    </div>;
+  }
+
+  // ── Listing page ─────────────────────────────────────────────────────────────
+  return <div style={{background:'var(--bg)',minHeight:'100vh'}}>
+    {/* Header */}
+    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'16px 20px 8px',position:'sticky',top:0,background:'var(--bg)',zIndex:10}}>
+      <div style={{display:'flex',alignItems:'center',gap:12}}>
+        <button onClick={()=>setPage('home')} style={{width:36,height:36,borderRadius:'50%',background:'var(--card2)',border:'none',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',color:'var(--text)',fontSize:18,fontWeight:700}}>‹</button>
+        <span style={{fontSize:20,fontWeight:700}}>Marketplace</span>
+      </div>
+      <button onClick={()=>setModal(true)} style={{width:36,height:36,borderRadius:'50%',background:'var(--accent)',border:'none',cursor:'pointer',color:'white',fontSize:20,fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center'}}>+</button>
+    </div>
+
+    {/* Filter pills */}
+    <div style={{display:'flex',gap:8,padding:'0 16px 14px'}}>
+      {[['all','All'],['sell','For Sale'],['buy','Wanted']].map(([k,l])=>
+        <button key={k} onClick={()=>setFilter(k)} style={{padding:'6px 16px',borderRadius:20,border:'1px solid var(--border)',background:filter===k?'var(--accent)':'none',color:filter===k?'white':'var(--text2)',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',transition:'all .2s'}}>
+          {l}
+        </button>
+      )}
+    </div>
+
+    {/* Listings */}
+    <div style={{padding:'0 16px 100px'}}>
+      {visible.length===0 && <div style={{textAlign:'center',padding:'60px 0',color:'var(--text2)'}}>
+        <div style={{fontSize:40,marginBottom:12}}>🛍️</div>
+        <div>No listings yet</div>
       </div>}
-      <div className="flex-between">
-        <div style={{flex:1}}>
-          <div className="card-title">{p.title}</div>
-          <div className="card-sub">{p.description}</div>
-          <div className="card-sub mt-2">by {p.posted_by}</div>
-        </div>
-        <div style={{textAlign:'right',flexShrink:0,marginLeft:12}}>
-          <div style={{fontSize:16,fontWeight:700,color:'var(--green)',fontFamily:'Space Mono'}}>Rs.{p.price}</div>
-          <span className={`badge badge-${p.post_type==='sell'?'purple':'orange'}`}>{p.post_type}</span>
-        </div>
-      </div>
-    </div>)}
-    {!posts.length && <div className="empty">No posts in your society</div>}
-
-    {/* Lightbox */}
-    {lightbox && <div className="modal-overlay" onClick={()=>setLightbox(null)} style={{alignItems:'center'}}>
-      <div onClick={e=>e.stopPropagation()} style={{width:'100%',maxWidth:480,padding:'0 20px'}}>
-        <img src={lightbox.images[lightbox.index]} style={{width:'100%',borderRadius:16,maxHeight:'70vh',objectFit:'contain'}}/>
-        <div style={{display:'flex',justifyContent:'center',gap:8,marginTop:12}}>
-          {lightbox.images.map((_,i)=><div key={i} onClick={()=>setLightbox(l=>({...l,index:i}))} style={{width:8,height:8,borderRadius:'50%',background:i===lightbox.index?'white':'rgba(255,255,255,0.3)',cursor:'pointer'}}/>)}
-        </div>
-        <div style={{display:'flex',justifyContent:'space-between',marginTop:12}}>
-          <button onClick={()=>setLightbox(l=>({...l,index:Math.max(0,l.index-1)}))} disabled={lightbox.index===0} className="btn" style={{background:'rgba(255,255,255,0.1)',color:'white',flex:1,marginRight:8}}>← Prev</button>
-          <button onClick={()=>setLightbox(l=>({...l,index:Math.min(l.images.length-1,l.index+1)}))} disabled={lightbox.index===lightbox.images.length-1} className="btn" style={{background:'rgba(255,255,255,0.1)',color:'white',flex:1}}>Next →</button>
-        </div>
-        <button onClick={()=>setLightbox(null)} className="btn" style={{width:'100%',marginTop:8,background:'rgba(255,255,255,0.08)',color:'white'}}>Close</button>
-      </div>
-    </div>}
+      {visible.map(p=>{
+        const imgs = p.images||[];
+        const thumb = imgs[0];
+        return <div key={p.id} onClick={()=>openDetail(p)}
+          style={{background:'var(--card2)',borderRadius:16,marginBottom:10,overflow:'hidden',border:'1px solid var(--border)',cursor:'pointer',display:'flex',gap:0}}>
+          {/* Thumbnail */}
+          <div style={{width:100,height:100,flexShrink:0,background:'var(--card)',overflow:'hidden',position:'relative'}}>
+            {thumb
+              ? <img src={thumb} style={{width:'100%',height:'100%',objectFit:'cover'}}/>
+              : <div style={{width:'100%',height:'100%',display:'flex',alignItems:'center',justifyContent:'center',fontSize:32}}>{p.post_type==='sell'?'🏷️':'🛒'}</div>}
+            {imgs.length>1 && <div style={{position:'absolute',bottom:4,right:4,background:'rgba(0,0,0,0.6)',borderRadius:8,padding:'2px 6px',fontSize:10,color:'white',fontWeight:600}}>+{imgs.length}</div>}
+          </div>
+          {/* Info */}
+          <div style={{flex:1,padding:'12px 14px',minWidth:0}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:8,marginBottom:4}}>
+              <div style={{fontWeight:700,fontSize:14,color:'var(--text)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',flex:1}}>{p.title}</div>
+              <span style={{fontSize:11,fontWeight:700,padding:'2px 8px',borderRadius:20,flexShrink:0,
+                background:p.post_type==='sell'?'rgba(108,92,231,.15)':'rgba(253,203,110,.15)',
+                color:p.post_type==='sell'?'var(--accent)':'var(--orange)',
+                border:`1px solid ${p.post_type==='sell'?'var(--accent)':'var(--orange)'}`}}>
+                {p.post_type==='sell'?'Sale':'Want'}
+              </span>
+            </div>
+            {p.description && <div style={{fontSize:12,color:'var(--text2)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',marginBottom:8}}>{p.description}</div>}
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <div style={{fontSize:16,fontWeight:800,color:'var(--green)',fontFamily:'Space Mono'}}>
+                {p.price>0?`₹${Number(p.price).toLocaleString('en-IN')}`:'Free'}
+              </div>
+              <div style={{fontSize:11,color:'var(--text2)'}}>{p.posted_by}</div>
+            </div>
+          </div>
+        </div>;
+      })}
+    </div>
 
     {/* Create post modal */}
     {modal && <div className="modal-overlay" onClick={()=>setModal(false)}>
       <div className="modal" onClick={e=>e.stopPropagation()}>
         <h2>New Listing</h2>
-
-        {/* Photos */}
         <div className="form-group">
           <label className="label">Photos <span style={{color:'var(--text2)'}}>(up to 6)</span></label>
           <div className="photo-grid">
             {photos.map((src,i)=><div key={i} className="photo-thumb-wrap">
               <img src={src} className="photo-thumb"/>
-              <button className="photo-remove" onClick={()=>removePhoto(i)}>×</button>
+              <button className="photo-remove" onClick={()=>setPhotos(p=>p.filter((_,j)=>j!==i))}>×</button>
             </div>)}
             {photos.length<6&&<button className="photo-add" onClick={()=>fileInputRef.current.click()}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
@@ -2613,26 +2717,22 @@ function MarketplacePage({setPage, prefill}) {
           </div>
           <input ref={fileInputRef} type="file" accept="image/*" multiple style={{display:'none'}} onChange={addPhotos}/>
         </div>
-
         <div className="form-group"><label className="label">Type</label>
           <select className="input" value={form.postType} onChange={e=>setF('postType',e.target.value)}>
-            <option value="sell">Sell</option><option value="buy">Buy</option>
+            <option value="sell">For Sale</option><option value="buy">Wanted</option>
           </select></div>
         <div className="form-group"><label className="label">Title *</label>
           <input className="input" value={form.title} onChange={e=>setF('title',e.target.value)} placeholder="e.g. Sofa for sale"/></div>
         <div className="form-group"><label className="label">Description</label>
           <textarea className="input" value={form.description} onChange={e=>setF('description',e.target.value)} placeholder="Condition, details..." rows={3} style={{resize:'none'}}/></div>
-        <div className="form-group"><label className="label">Price (Rs.)</label>
-          <input className="input" type="number" value={form.price} onChange={e=>setF('price',e.target.value)} placeholder="0"/></div>
-
-        <div className="flex" style={{gap:10,marginTop:16}}>
+        <div className="form-group"><label className="label">Price (₹)</label>
+          <input className="input" type="number" value={form.price} onChange={e=>setF('price',e.target.value)} placeholder="0 for free"/></div>
+        <div style={{display:'flex',gap:10,marginTop:16}}>
           <button className="btn btn-primary" style={{flex:1}} onClick={create}>Post Listing</button>
           <button className="btn btn-secondary" style={{flex:1}} onClick={()=>setModal(false)}>Cancel</button>
         </div>
       </div>
     </div>}
-
-    </div>
   </div>;
 }
 
