@@ -1,0 +1,39 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1024" height="1024" rx="220" fill="#1A0A00"/>
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="35%" r="65%">
+      <stop offset="0%" stop-color="#7C2D00" stop-opacity="1"/>
+      <stop offset="100%" stop-color="#1A0A00" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="sh" x1="240" y1="120" x2="784" y2="920" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FB923C"/>
+      <stop offset="100%" stop-color="#C2410C"/>
+    </linearGradient>
+    <linearGradient id="pe" x1="280" y1="500" x2="744" y2="720" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FCD34D"/>
+      <stop offset="100%" stop-color="#F59E0B"/>
+    </linearGradient>
+  </defs>
+  <ellipse cx="512" cy="400" rx="460" ry="420" fill="url(#bg)"/>
+  <circle cx="512" cy="512" r="440" fill="none" stroke="rgba(251,146,60,0.06)" stroke-width="80"/>
+  <!-- shield outer -->
+  <path d="M512 130 L800 256 L800 544 Q800 760 512 900 Q224 760 224 544 L224 256 Z" fill="url(#sh)" opacity=".16"/>
+  <path d="M512 130 L800 256 L800 544 Q800 760 512 900 Q224 760 224 544 L224 256 Z" fill="none" stroke="url(#sh)" stroke-width="14" stroke-linejoin="round"/>
+  <!-- shield inner -->
+  <path d="M512 210 L736 316 L736 544 Q736 720 512 840 Q288 720 288 544 L288 316 Z" fill="none" stroke="rgba(251,146,60,0.18)" stroke-width="4" stroke-linejoin="round"/>
+  <!-- centre person -->
+  <circle cx="512" cy="430" r="72" fill="url(#pe)"/>
+  <path d="M330 680 Q330 570 512 570 Q694 570 694 680" fill="url(#pe)"/>
+  <!-- left person -->
+  <circle cx="310" cy="458" r="48" fill="rgba(251,146,60,0.72)"/>
+  <path d="M178 648 Q178 578 310 578 Q442 578 442 648" fill="rgba(251,146,60,0.52)"/>
+  <!-- right person -->
+  <circle cx="714" cy="458" r="48" fill="rgba(251,146,60,0.72)"/>
+  <path d="M582 648 Q582 578 714 578 Q846 578 846 648" fill="rgba(251,146,60,0.52)"/>
+  <!-- bottom gem -->
+  <circle cx="512" cy="900" r="18" fill="#FB923C" opacity=".55"/>
+  <!-- top crown gem -->
+  <circle cx="512" cy="130" r="28" fill="#C2410C"/>
+  <circle cx="512" cy="130" r="16" fill="#FB923C"/>
+  <circle cx="504" cy="123" r="5" fill="rgba(255,255,255,0.4)"/>
+</svg>

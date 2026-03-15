@@ -1,0 +1,43 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1024" height="1024" rx="220" fill="#110820"/>
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="38%" r="68%">
+      <stop offset="0%" stop-color="#3D1F6E" stop-opacity="1"/>
+      <stop offset="100%" stop-color="#110820" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="arc" x1="200" y1="440" x2="824" y2="440" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#A78BFA"/>
+      <stop offset="50%" stop-color="#DDD6FE"/>
+      <stop offset="100%" stop-color="#A78BFA"/>
+    </linearGradient>
+    <linearGradient id="key" x1="380" y1="540" x2="644" y2="820" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FDE68A"/>
+      <stop offset="100%" stop-color="#D97706"/>
+    </linearGradient>
+  </defs>
+  <ellipse cx="512" cy="420" rx="480" ry="420" fill="url(#bg)"/>
+  <!-- pillars -->
+  <rect x="196" y="390" width="92" height="440" rx="24" fill="rgba(167,139,250,0.22)"/>
+  <rect x="736" y="390" width="92" height="440" rx="24" fill="rgba(167,139,250,0.22)"/>
+  <!-- arch outer -->
+  <path d="M196 418 Q196 120 512 120 Q828 120 828 418" fill="rgba(167,139,250,0.08)" stroke="url(#arc)" stroke-width="32" stroke-linecap="round"/>
+  <!-- arch inner echo -->
+  <path d="M240 420 Q240 172 512 172 Q784 172 784 420" fill="none" stroke="rgba(167,139,250,0.14)" stroke-width="8"/>
+  <!-- ground line -->
+  <rect x="148" y="392" width="728" height="5" rx="2.5" fill="rgba(167,139,250,0.28)"/>
+  <!-- key ring -->
+  <circle cx="512" cy="626" r="102" fill="none" stroke="url(#key)" stroke-width="40"/>
+  <!-- key shaft -->
+  <rect x="590" y="608" width="172" height="40" rx="20" fill="url(#key)"/>
+  <!-- key teeth -->
+  <rect x="722" y="648" width="40" height="54" rx="10" fill="url(#key)"/>
+  <rect x="666" y="648" width="40" height="40" rx="10" fill="url(#key)"/>
+  <!-- keyhole -->
+  <circle cx="512" cy="626" r="32" fill="#110820"/>
+  <rect x="500" y="626" width="24" height="32" rx="8" fill="#110820"/>
+  <!-- crown gem layers -->
+  <circle cx="512" cy="120" r="44" fill="#5B21B6"/>
+  <circle cx="512" cy="120" r="28" fill="#7C3AED"/>
+  <circle cx="512" cy="120" r="14" fill="#A78BFA"/>
+  <circle cx="504" cy="110" r="6" fill="rgba(255,255,255,0.45)"/>
+</svg>
